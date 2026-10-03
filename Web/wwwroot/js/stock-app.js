@@ -63,8 +63,9 @@ window.stockApp = {
     async signOut() { await signOut(auth); },
     async getCandles(symbol, timeframe, fromMonth, toMonth) {
         const all = [];
-        for (const month of monthsBetween(fromMonth, toMonth)) {
-            const snapshot = await getDoc(candleRef(symbol, timeframe, month));
+        const snapshots = await Promise.all(monthsBetween(fromMonth, toMonth)
+            .map(month => getDoc(candleRef(symbol, timeframe, month))));
+        for (const snapshot of snapshots) {
             if (snapshot.exists()) all.push(...Object.values(snapshot.data().bars ?? {}));
         }
         return JSON.stringify(all.sort((a, b) => a.Time.localeCompare(b.Time)));

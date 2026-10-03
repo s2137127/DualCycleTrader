@@ -60,7 +60,7 @@ public class HomeBase : ComponentBase
             var config = await Http.GetFromJsonAsync<Config>("firebase-config.json", jsonOptions);
             if (config is null || string.IsNullOrWhiteSpace(config.ProjectId) ||
                 string.IsNullOrWhiteSpace(config.MarketApiBaseUrl)) return;
-            await JS.InvokeVoidAsync("import", "./js/stock-app.js");
+            await JS.InvokeVoidAsync("import", "./js/stock-app.js?v=20261003-1");
             Email = await JS.InvokeAsync<string?>("stockApp.initialize", new
             {
                 apiKey = config.ApiKey, authDomain = config.AuthDomain,
@@ -223,37 +223,46 @@ public class HomeBase : ComponentBase
             MarketDetail = $"MA20 {(snapshot.Ma20Up ? "↑" : "↓")}　MA50 {(snapshot.Ma50Up ? "↑" : "↓")}　MA100 {(snapshot.Ma100Up ? "↑" : "↓")}　ADX {snapshot.Adx:F1}　RSI {snapshot.Rsi:F1}";
             var results = new List<ResultRow>();
             ProgressMax = Universe.Count; Progress = 0;
-            foreach (var stock in Universe)
+            const int readBatchSize = 8;
+            for (int start = 0; start < Universe.Count; start += readBatchSize)
             {
                 token.ThrowIfCancellationRequested();
-                var daily = await Store.GetAsync(stock.Symbol, "D", today.AddDays(-550), today.AddDays(1));
-                if (date is not null) daily = HistoricalCandles.DailyAtClose(daily, date.Value);
-                if (daily.Count >= 130 && (date is null || HistoricalCandles.HasCandleOn(daily, date.Value)))
-                    foreach (var candidate in ScannerCoordinator.Scan(stock.Symbol, stock.Name,
-                        daily, market, modes, Settings))
-                    {
-                        var hourly = await Store.GetAsync(stock.Symbol, "60", today.AddDays(-200), today.AddDays(1));
-                        if (date is not null) hourly = HistoricalCandles.HourlyAtClose(hourly, date.Value);
-                        var checks = ScannerCoordinator.CheckEntries(hourly, candidate, Settings);
-                        var entry = checks.Values.FirstOrDefault(c => c.IsMatch) ?? checks.Values.First();
-                        bool enoughHistory = date is null ||
-                            (hourly.Count >= 70 && hourly.Any(c => c.Time.Date == date.Value.Date));
-                        string signal = !enoughHistory ? "歷史60分資料不足" : hourly.Count == 0 ? "尚未更新" :
-                            checks.Values.Any(c => c.IsMatch) ? "符合" : "等待";
-                        string reason = !enoughHistory ? "該交易日的 60 分 K 不足。" : hourly.Count == 0 ? "尚無 60 分 K 資料。" : string.Join("；",
-                            checks.Select(c => $"{c.Key}：{(c.Value.IsMatch ? "所有條件符合" : string.Join("、", c.Value.UnmetConditions))}"));
-                        results.Add(new(stock.Market, stock.Symbol.Split('.')[0], stock.Name,
-                            string.Join("+", candidate.MatchedStrategies.Select(m => m.ToString()[0])),
-                            candidate.Close, candidate.ChangePercent, candidate.Rsi14,
-                            candidate.RelativeStrength20, candidate.DailyConditions, signal, reason,
-                            Rank(candidate, candidate.Mode),
-                            FormatMacd(candidate.DailyMacdDif, candidate.DailyMacdDea),
-                            FormatKdj(candidate.DailyK, candidate.DailyD, candidate.DailyJ),
-                            FormatMacd(entry.MacdDif, entry.MacdDea),
-                            FormatKdj(entry.K, entry.D, entry.J)));
-                    }
-                Progress++; Status = $"分析 {Progress}/{Universe.Count}：{stock.Name}";
-                if (Progress % 10 == 0) StateHasChanged();
+                var batch = Universe.Skip(start).Take(readBatchSize).ToArray();
+                var dailyBars = await Task.WhenAll(batch.Select(stock =>
+                    Store.GetAsync(stock.Symbol, "D", today.AddDays(-550), today.AddDays(1))));
+                for (int index = 0; index < batch.Length; index++)
+                {
+                    token.ThrowIfCancellationRequested();
+                    var stock = batch[index];
+                    var daily = dailyBars[index];
+                    if (date is not null) daily = HistoricalCandles.DailyAtClose(daily, date.Value);
+                    if (daily.Count >= 130 && (date is null || HistoricalCandles.HasCandleOn(daily, date.Value)))
+                        foreach (var candidate in ScannerCoordinator.Scan(stock.Symbol, stock.Name,
+                            daily, market, modes, Settings))
+                        {
+                            var hourly = await Store.GetAsync(stock.Symbol, "60", today.AddDays(-200), today.AddDays(1));
+                            if (date is not null) hourly = HistoricalCandles.HourlyAtClose(hourly, date.Value);
+                            var checks = ScannerCoordinator.CheckEntries(hourly, candidate, Settings);
+                            var entry = checks.Values.FirstOrDefault(c => c.IsMatch) ?? checks.Values.First();
+                            bool enoughHistory = date is null ||
+                                (hourly.Count >= 70 && hourly.Any(c => c.Time.Date == date.Value.Date));
+                            string signal = !enoughHistory ? "歷史60分資料不足" : hourly.Count == 0 ? "尚未更新" :
+                                checks.Values.Any(c => c.IsMatch) ? "符合" : "等待";
+                            string reason = !enoughHistory ? "該交易日的 60 分 K 不足。" : hourly.Count == 0 ? "尚無 60 分 K 資料。" : string.Join("；",
+                                checks.Select(c => $"{c.Key}：{(c.Value.IsMatch ? "所有條件符合" : string.Join("、", c.Value.UnmetConditions))}"));
+                            results.Add(new(stock.Market, stock.Symbol.Split('.')[0], stock.Name,
+                                string.Join("+", candidate.MatchedStrategies.Select(m => m.ToString()[0])),
+                                candidate.Close, candidate.ChangePercent, candidate.Rsi14,
+                                candidate.RelativeStrength20, candidate.DailyConditions, signal, reason,
+                                Rank(candidate, candidate.Mode),
+                                FormatMacd(candidate.DailyMacdDif, candidate.DailyMacdDea),
+                                FormatKdj(candidate.DailyK, candidate.DailyD, candidate.DailyJ),
+                                FormatMacd(entry.MacdDif, entry.MacdDea),
+                                FormatKdj(entry.K, entry.D, entry.J)));
+                        }
+                    Progress++; Status = $"分析 {Progress}/{Universe.Count}：{stock.Name}";
+                    if (Progress % 10 == 0) StateHasChanged();
+                }
             }
             Rows = results.OrderByDescending(r => r.Rank).ToList();
             await JS.InvokeVoidAsync("stockApp.putJson", "latest-results", JsonSerializer.Serialize(Rows));
