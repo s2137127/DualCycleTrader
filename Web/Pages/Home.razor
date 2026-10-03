@@ -1,0 +1,75 @@
+@page "/"
+@using Microsoft.AspNetCore.Components.Forms
+@inherits HomeBase
+
+<PageTitle>雙週期選股系統</PageTitle>
+<main class="app-shell">
+    <header><h1>雙週期選股系統</h1><p>手動更新行情，跨裝置查看分析結果</p></header>
+    @if (Error is not null) { <p class="error" role="alert">@Error</p> }
+    @if (!Configured) { <p class="notice">請先設定 Firebase 與行情代理網址。</p> }
+    else if (Email is null)
+    {
+        <section class="card login"><h2>登入</h2>
+            <label>電子郵件<input type="email" @bind="LoginEmail" /></label>
+            <label>密碼<input type="password" @bind="Password" /></label>
+            <button @onclick="SignIn">登入</button>
+        </section>
+    }
+    else
+    {
+        <div class="account">@Email <button class="secondary" @onclick="SignOut">登出</button></div>
+        <section class="card">
+            <div class="controls">
+                <button disabled="@Busy" @onclick="UpdateData">更新資料</button>
+                <button disabled="@Busy" @onclick="() => Analyze(null)">重新分析</button>
+                <label>回測日期<input type="date" @bind="HistoricalDate" /></label>
+                <button disabled="@Busy" @onclick="() => Analyze(HistoricalDate)">歷史日期分析</button>
+                <label>觸發期間<select @bind="HistoryMonths"><option value="6">半年</option><option value="3">一季</option><option value="1">一個月</option><option value="0">一週</option></select></label>
+                <button disabled="@Busy" @onclick="ShowSignalHistory">觸發紀錄</button>
+                <button disabled="@(!Busy)" class="secondary" @onclick="Cancel">停止</button>
+            </div>
+            <div class="controls">
+                <label>模擬模式<select @bind="Simulation"><option value="">自動</option><option value="A">A 多方趨勢</option><option value="B">B 多方震盪</option><option value="C">C 空方震盪</option><option value="D">D 空方趨勢</option><option value="E">E 過渡盤</option></select></label>
+                <label>結果篩選<select @bind="Filter"><option value="全部">全部候選</option><option value="A">A 突破</option><option value="B">B 回檔</option><option value="C">C 抗跌</option><option value="符合">60 分已觸發</option></select></label>
+                <button class="secondary" disabled="@(ShowingHistory ? SignalRows.Count==0 : Rows.Count==0)" @onclick="ExportExcel">匯出 Excel</button>
+            </div>
+            <details><summary>策略設定</summary>
+                <div class="settings-grid">
+                    <label>日 K RSI<input type="number" @bind="Settings.DailyRsiPeriod" /></label>
+                    <label>60 分 RSI<input type="number" @bind="Settings.IntradayRsiPeriod" /></label>
+                    <label>日 K MACD 快<input type="number" @bind="Settings.DailyMacdFast" /></label>
+                    <label>日 K MACD 慢<input type="number" @bind="Settings.DailyMacdSlow" /></label>
+                    <label>日 K MACD 訊號<input type="number" @bind="Settings.DailyMacdSignal" /></label>
+                    <label>60 分 MACD 快<input type="number" @bind="Settings.IntradayMacdFast" /></label>
+                    <label>60 分 MACD 慢<input type="number" @bind="Settings.IntradayMacdSlow" /></label>
+                    <label>60 分 MACD 訊號<input type="number" @bind="Settings.IntradayMacdSignal" /></label>
+                </div><button @onclick="SaveSettings">儲存設定</button>
+            </details>
+            <details><summary>匯入舊版行情 JSON</summary><p>選取 Data/MarketCache 中的 *_D.json 或 *_60.json；已存在的 K 棒會略過。</p><InputFile OnChange="ImportFiles" multiple /></details>
+        </section>
+        <section class="card"><p>@Status</p><progress max="@Math.Max(ProgressMax,1)" value="@Progress"></progress>
+            @if (ImportErrorDetails.Length>0) { <pre class="guide">@ImportErrorDetails</pre> }
+            @if (MarketText.Length>0) { <h2>@MarketText</h2><p>@MarketDetail</p> }
+        </section>
+        <section class="card"><details><summary>各策略條件與出場規則</summary>
+            <label>策略<select @bind="GuideMode"><option value="A">A 突破</option><option value="B">B 回檔</option><option value="C">C 抗跌</option><option value="D">D 空手</option><option value="E">E 觀察</option></select></label>
+            <pre class="guide">@GuideDescription</pre><pre class="guide">@ExitRules</pre>
+        </details></section>
+        @if (ShowingHistory)
+        {
+        <section class="card"><h2>觸發紀錄（@SignalRows.Count）</h2>
+            <div class="table-wrap"><table><thead><tr><th>觸發時間</th><th>價格</th><th>市場</th><th>代號</th><th>名稱</th><th>策略</th><th>日 K 判定日</th><th>交易模式</th><th>日 K 原因</th></tr></thead>
+                <tbody>@foreach (var signal in SignalRows) { <tr><td>@signal.TriggerTime</td><td>@signal.TriggerPrice</td><td>@signal.Market</td><td>@signal.Symbol</td><td>@signal.Name</td><td>@string.Join("+",signal.Strategies)</td><td>@signal.DailyDecisionDate.ToShortDateString()</td><td>@signal.TradingMode</td><td>@signal.DailyReason</td></tr> }</tbody>
+            </table></div>
+        </section>
+        }
+        else
+        {
+        <section class="card"><h2>候選結果（@VisibleRows.Count）</h2>
+            <div class="table-wrap"><table><thead><tr><th>市場</th><th>代號</th><th>名稱</th><th>策略</th><th>收盤</th><th>漲跌幅</th><th>RSI</th><th>相對強度20</th><th>日 K MACD</th><th>日 K KDJ</th><th>日 K 原因</th><th>60 分訊號</th><th>60 分 MACD</th><th>60 分 KDJ</th><th>等待原因</th></tr></thead>
+                <tbody>@foreach (var row in VisibleRows) { <tr><td>@row.Market</td><td>@row.Symbol</td><td>@row.Name</td><td>@row.Strategy</td><td>@row.Close</td><td>@row.ChangePercent.ToString("F2")%</td><td>@row.Rsi.ToString("F1")</td><td>@row.RelativeStrength.ToString("F1")</td><td>@row.DailyMacd</td><td>@row.DailyKdj</td><td>@row.DailyReason</td><td>@row.HourlySignal</td><td>@row.HourlyMacd</td><td>@row.HourlyKdj</td><td>@row.WaitingReason</td></tr> }</tbody>
+            </table></div>
+        </section>
+        }
+    }
+</main>

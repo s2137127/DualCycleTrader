@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../Indicators/Indicators.cs" Link="Indicators.cs" />
+    <Compile Include="../../Models/Candle.cs" Link="Candle.cs" />
+    <Compile Include="../../Models/MarketMode.cs" Link="MarketMode.cs" />
+    <Compile Include="../../Models/StockCandidate.cs" Link="StockCandidate.cs" />
+    <Compile Include="../../Models/StrategySettings.cs" Link="StrategySettings.cs" />
+    <Compile Include="../../Data/AppDataPaths.cs" Link="AppDataPaths.cs" />
+    <Compile Include="../../Data/IMarketDataProvider.cs" Link="IMarketDataProvider.cs" />
+    <Compile Include="../../Data/CachedMarketDataProvider.cs" Link="CachedMarketDataProvider.cs" />
+    <Compile Include="../../Data/HistoricalSignalStore.cs" Link="HistoricalSignalStore.cs" />
+    <Compile Include="../../Strategy/MarketClassifier.cs" Link="MarketClassifier.cs" />
+    <Compile Include="../../Strategy/StockScanner.cs" Link="StockScanner.cs" />
+    <Compile Include="../../Strategy/TradingModeManager.cs" Link="TradingModeManager.cs" />
+    <Compile Include="../../Strategy/ScannerCoordinator.cs" Link="ScannerCoordinator.cs" />
+    <Compile Include="../../Strategy/HistoricalCandles.cs" Link="HistoricalCandles.cs" />
+    <Compile Include="../../Strategy/HistoricalSignalScanner.cs" Link="HistoricalSignalScanner.cs" />
+    <Compile Include="../../Data/TaiwanStockUniverseProvider.cs" Link="TaiwanStockUniverseProvider.cs" />
+    <Compile Include="../../Data/StockInfo.cs" Link="StockInfo.cs" />
+    <Compile Include="../../ExcelExporter.cs" Link="ExcelExporter.cs" />
+    <Compile Include="../../Web/Services/TaiwanDateTimeConverter.cs" Link="TaiwanDateTimeConverter.cs" />
+  </ItemGroup>
+</Project>

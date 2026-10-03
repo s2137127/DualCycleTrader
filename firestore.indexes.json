@@ -1,0 +1,7 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    { "collectionGroup": "candles", "fieldPath": "bars", "indexes": [] },
+    { "collectionGroup": "state", "fieldPath": "json", "indexes": [] }
+  ]
+}

@@ -1,0 +1,14 @@
+**/bin/
+**/obj/
+.dotnet/
+.templateengine/
+Web/wwwroot/firebase-config.json
+Backups/
+/publish/
+Temp/
+.local-tools/
+.wrangler/
+firebase-debug.log
+Data/MarketCache/
+Data/*.json
+Data/*.txt
