@@ -206,6 +206,15 @@ var historicalHourly = Enumerable.Range(0, 70).Select(i =>
 historicalHourly.Add(new Candle(signalDay.AddHours(9), 123, 123, 123, 123, 1));
 historicalHourly.Add(new Candle(signalDay.AddHours(13), 124, 124, 124, 124, 1));
 var universe = new[] { new StockInfo("TEST.TW", "Test", "TWSE") };
+var targetDays = new HashSet<DateTime> { signalDay };
+var synchronousCandidates = HistoricalSignalScanner.FindDailyCandidatesByDate(signalMarket,
+    universe, _ => signalMarket, settings, signalDay, signalDay.AddDays(1), targetDays);
+var responsiveCandidates = await HistoricalSignalScanner.FindDailyCandidatesByDateAsync(signalMarket,
+    universe, _ => signalMarket, settings, signalDay, signalDay.AddDays(1), targetDays);
+Check(synchronousCandidates.Keys.Order().SequenceEqual(responsiveCandidates.Keys.Order()) &&
+    synchronousCandidates.All(pair => pair.Value.Select(stock => stock.Symbol)
+        .SequenceEqual(responsiveCandidates[pair.Key].Select(stock => stock.Symbol))),
+    "responsive daily candidate scan matches original result");
 int seenDailyCount = 0;
 var signalReport = HistoricalSignalScanner.ScanCore(signalMarket, universe,
     _ => signalMarket, _ => historicalHourly, settings,

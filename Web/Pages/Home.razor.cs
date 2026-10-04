@@ -34,6 +34,7 @@ public class HomeBase : ComponentBase
     protected List<StockInfo> Universe = new();
     protected List<ResultRow> Rows = new();
     protected List<HistoricalSignal> SignalRows = new();
+    protected int HistoryVisibleCount = 100;
     protected bool ShowingHistory;
     protected bool Analyzing;
     protected int HistoryMonths = 6;
@@ -437,9 +438,19 @@ public class HomeBase : ComponentBase
                     Status = $"讀取歷史日 K {Progress}/{Universe.Count}";
                     StateHasChanged();
                 }
-                var byDate = HistoricalSignalScanner.FindDailyCandidatesByDate(market, Universe,
+                ProgressMax = Universe.Count; Progress = 0;
+                Status = "正在篩選歷史日 K 候選股…";
+                StateHasChanged();
+                await Task.Delay(1, token);
+                var dailyProgress = new Progress<int>(count =>
+                {
+                    Progress = count;
+                    Status = $"篩選歷史日 K {count}/{Universe.Count}";
+                    StateHasChanged();
+                });
+                var byDate = await HistoricalSignalScanner.FindDailyCandidatesByDateAsync(market, Universe,
                     symbol => daily.GetValueOrDefault(symbol) ?? new(), Settings, missing.Min(), today,
-                    missing, token);
+                    missing, token, dailyProgress);
                 var candidates = byDate.Values.SelectMany(s => s).DistinctBy(s => s.Symbol).ToArray();
                 var hourly = new Dictionary<string, List<Candle>>();
                 ProgressMax = candidates.Length; Progress = 0;
@@ -471,10 +482,22 @@ public class HomeBase : ComponentBase
                     Status = $"補齊歷史 60 分 K {Progress}/{candidates.Length}";
                     StateHasChanged();
                 }
-                var report = HistoricalSignalScanner.Scan(market, Universe,
-                    symbol => daily.GetValueOrDefault(symbol) ?? new(),
-                    symbol => hourly.GetValueOrDefault(symbol) ?? new(), Settings,
-                    missing.Min(), today, token, null, missing);
+                var reportSignals = new List<HistoricalSignal>();
+                ProgressMax = candidates.Length; Progress = 0;
+                for (int start = 0; start < candidates.Length; start += 8)
+                {
+                    token.ThrowIfCancellationRequested();
+                    var batch = candidates.Skip(start).Take(8).ToArray();
+                    var report = HistoricalSignalScanner.Scan(market, batch,
+                        symbol => daily.GetValueOrDefault(symbol) ?? new(),
+                        symbol => hourly.GetValueOrDefault(symbol) ?? new(), Settings,
+                        missing.Min(), today, token, null, missing);
+                    reportSignals.AddRange(report.Signals);
+                    Progress += batch.Length;
+                    Status = $"檢查歷史觸發訊號 {Progress}/{candidates.Length}";
+                    StateHasChanged();
+                    await Task.Delay(1, token);
+                }
                 var completed = new HashSet<DateTime>();
                 foreach (var date in missing)
                 {
@@ -492,7 +515,7 @@ public class HomeBase : ComponentBase
                     if (dates.Length == 0) continue;
                     var archive = merger.Merge(archives[month], dates,
                         completed.Where(d => d.ToString("yyyyMM") == month),
-                        report.Signals.Where(s => s.TriggerTime.ToString("yyyyMM") == month));
+                        reportSignals.Where(s => s.TriggerTime.ToString("yyyyMM") == month));
                     await SaveSignalMonth(month, archive);
                     archives[month] = archive;
                 }
@@ -500,6 +523,7 @@ public class HomeBase : ComponentBase
             SignalRows = archives.Values.SelectMany(a => a.Signals)
                 .Where(s => s.TriggerTime.Date >= earliest && s.TriggerTime.Date < today)
                 .OrderByDescending(s => s.TriggerTime).ToList();
+            HistoryVisibleCount = 100;
             ShowingHistory = true;
             Status = $"觸發紀錄 {SignalRows.Count} 筆；本次新增分析 {missing.Count} 個交易日；耗時 {timer.Elapsed.TotalSeconds:F1} 秒。";
         }
@@ -512,6 +536,8 @@ public class HomeBase : ComponentBase
             End();
         }
     }
+
+    protected void ShowMoreHistory() => HistoryVisibleCount = Math.Min(HistoryVisibleCount + 100, SignalRows.Count);
 
     protected async Task ImportFiles(InputFileChangeEventArgs args)
     {
