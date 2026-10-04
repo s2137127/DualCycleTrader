@@ -13,6 +13,8 @@ public static class StockScanner
         IReadOnlyList<Candle> market, MarketMode mode, StrategySettings s)
     {
         if(x.Count<130 || market.Count<30 || mode==MarketMode.D_BearTrend) return null;
+        if (mode is MarketMode.A_BullTrend or MarketMode.B_BullRange)
+            return ScanBullish(symbol, name, x, market, mode, s);
         double close=(double)x[^1].Close;
         double ma20=Ta.Sma(x,20)!.Value, ma50=Ta.Sma(x,50)!.Value, ma100=Ta.Sma(x,100)!.Value;
         bool ma20up=ma20>Ta.Sma(x,20,5)!.Value, ma50up=ma50>Ta.Sma(x,50,5)!.Value;
@@ -30,24 +32,7 @@ public static class StockScanner
         bool volumePattern = downDay ? vol < avgVol : vol > avgVol;
 
         bool ok=false; string reason="";
-        if(mode==MarketMode.A_BullTrend)
-        {
-            bool breakoutOrNear = close >= high20 * 0.99;
-            ok=close>ma20 && ma20>ma50 && ma50>ma100 && ma20up && ma50up && ma100up &&
-               rsi>55 && macd.dif>macd.dea && breakoutOrNear && rs>0 &&
-               (!(close>high20) || (avgVol>0 && vol>=avgVol*s.BreakoutVolumeMultiple));
-            reason=$"20日高附近/突破＋相對大盤強{rs:F1}%";
-        }
-        else if(mode==MarketMode.B_BullRange)
-        {
-            double recentHigh=x.TakeLast(20).Max(c=>(double)c.High);
-            double pullback=(recentHigh-close)/recentHigh*100;
-            ok=close>ma20 && ma20>ma50 && ma20up && ma50up &&
-               pullback>=s.PullbackMinPercent && pullback<=s.PullbackMaxPercent &&
-               vol<avgVol && rsi>=40 && rsi<=55 && negativeHistShrinking;
-            reason=$"回檔{pullback:F1}%＋量縮＋MACD負柱縮短";
-        }
-        else if(mode==MarketMode.C_BearRange)
+        if(mode==MarketMode.C_BearRange)
         {
             bool nearOrAbove50=close>=ma50 || Math.Abs(close-ma50)/ma50*100<=s.NearMaPercent;
             bool holdPriorLow=(double)x[^1].Low >= (double)x.Take(x.Count-1).TakeLast(20).Min(c=>c.Low);
@@ -67,6 +52,70 @@ public static class StockScanner
         double changePercent=previousClose==0 ? 0 : (close-previousClose)/previousClose*100;
         return new StockCandidate{Symbol=symbol,Name=name,Mode=mode,Close=x[^1].Close,
             ChangePercent=changePercent,Rsi14=rsi,RelativeStrength20=rs,
+            DailyMacdDif=macd.dif,DailyMacdDea=macd.dea,
+            DailyK=kdj.k,DailyD=kdj.d,DailyJ=kdj.j,Reason=reason};
+    }
+
+    private static StockCandidate? ScanBullish(string symbol, string name,
+        IReadOnlyList<Candle> x, IReadOnlyList<Candle> market,
+        MarketMode mode, StrategySettings s)
+    {
+        double close=(double)x[^1].Close;
+        double ma20=Ta.Sma(x,20)!.Value, ma50=Ta.Sma(x,50)!.Value;
+        double volume=(double)x[^1].Volume;
+        double averageVolume;
+        double relativeStrength;
+        double rsi;
+        (double dif,double dea,double hist) macd;
+        string reason;
+
+        if (mode==MarketMode.A_BullTrend)
+        {
+            double ma100=Ta.Sma(x,100)!.Value;
+            if (!(close>ma20 && ma20>ma50 && ma50>ma100 &&
+                  ma20>Ta.Sma(x,20,5) && ma50>Ta.Sma(x,50,5) &&
+                  ma100>Ta.Sma(x,100,20))) return null;
+            double high20=x.Take(x.Count-1).TakeLast(20).Max(c=>(double)c.High);
+            if (close<high20*0.99) return null;
+            relativeStrength=RelativeStrength20(x,market);
+            if (relativeStrength<=0) return null;
+            if (close>high20)
+            {
+                averageVolume=Ta.AvgVolume(x,20,1)??0;
+                if (!(averageVolume>0 && volume>=averageVolume*s.BreakoutVolumeMultiple))
+                    return null;
+            }
+            rsi=Ta.Rsi(x,s.DailyRsiPeriod)??50;
+            if (rsi<=55) return null;
+            macd=Ta.Macd(x,s.DailyMacdFast,s.DailyMacdSlow,s.DailyMacdSignal)??(0,0,0);
+            if (macd.dif<=macd.dea) return null;
+            reason=$"20日高附近/突破＋相對大盤強{relativeStrength:F1}%";
+        }
+        else
+        {
+            if (!(close>ma20 && ma20>ma50 &&
+                  ma20>Ta.Sma(x,20,5) && ma50>Ta.Sma(x,50,5))) return null;
+            double recentHigh=x.TakeLast(20).Max(c=>(double)c.High);
+            double pullback=(recentHigh-close)/recentHigh*100;
+            if (pullback<s.PullbackMinPercent || pullback>s.PullbackMaxPercent) return null;
+            averageVolume=Ta.AvgVolume(x,20,1)??0;
+            if (volume>=averageVolume) return null;
+            rsi=Ta.Rsi(x,s.DailyRsiPeriod)??50;
+            if (rsi<40 || rsi>55) return null;
+            macd=Ta.Macd(x,s.DailyMacdFast,s.DailyMacdSlow,s.DailyMacdSignal)??(0,0,0);
+            var previousMacd=Ta.Macd(x.Take(x.Count-1).ToList(),s.DailyMacdFast,
+                s.DailyMacdSlow,s.DailyMacdSignal)??(0,0,0);
+            if (!(macd.hist<0 && previousMacd.hist<0 && macd.hist>previousMacd.hist))
+                return null;
+            relativeStrength=RelativeStrength20(x,market);
+            reason=$"回檔{pullback:F1}%＋量縮＋MACD負柱縮短";
+        }
+
+        var kdj=Ta.Kdj(x,9)??(0,0,0);
+        double previousClose=(double)x[^2].Close;
+        return new StockCandidate{Symbol=symbol,Name=name,Mode=mode,Close=x[^1].Close,
+            ChangePercent=previousClose==0?0:(close-previousClose)/previousClose*100,
+            Rsi14=rsi,RelativeStrength20=relativeStrength,
             DailyMacdDif=macd.dif,DailyMacdDea=macd.dea,
             DailyK=kdj.k,DailyD=kdj.d,DailyJ=kdj.j,Reason=reason};
     }

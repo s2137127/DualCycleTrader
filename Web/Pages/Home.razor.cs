@@ -446,6 +446,7 @@ public class HomeBase : ComponentBase
             var missing = tradingDates.Where(d => !analyzed.Contains(d)).ToHashSet();
             int newDailyA = 0, newDailyB = 0, completedDays = 0;
             int hourlyReady = 0, hourlyExpected = 0;
+            TimeSpan dailyReadTime = TimeSpan.Zero, dailyScanTime = TimeSpan.Zero;
             if (missing.Count > 0)
             {
                 ProgressMax = Universe.Count; Progress = 0;
@@ -469,6 +470,8 @@ public class HomeBase : ComponentBase
                     missing, token, dailyProgress);
                 newDailyA = streamed.AStockDays;
                 newDailyB = streamed.BStockDays;
+                dailyReadTime = streamed.ReadTime;
+                dailyScanTime = streamed.ScanTime;
                 var byDate = streamed.ByDate;
                 var daily = streamed.CandidateDaily;
                 var candidates = byDate.Values.SelectMany(s => s).DistinctBy(s => s.Symbol).ToArray();
@@ -568,7 +571,7 @@ public class HomeBase : ComponentBase
             int historyA = SignalRows.Count(s => s.Strategies.Contains(MarketMode.A_BullTrend));
             int historyB = SignalRows.Count(s => s.Strategies.Contains(MarketMode.B_BullRange));
             string diagnostic = missing.Count == 0 ? "已讀取既有紀錄" :
-                $"本次日 K 候選 A {newDailyA}／B {newDailyB} 筆（股票×日期），60 分資料足夠 {hourlyReady}/{hourlyExpected} 筆候選、完整交易日 {completedDays}/{missing.Count}";
+                $"本次日 K 候選 A {newDailyA}／B {newDailyB} 筆（股票×日期），日 K 讀取 {dailyReadTime.TotalSeconds:F1} 秒／篩選 {dailyScanTime.TotalSeconds:F1} 秒，60 分資料足夠 {hourlyReady}/{hourlyExpected} 筆候選、完整交易日 {completedDays}/{missing.Count}";
             Status = $"觸發紀錄 A {historyA}／B {historyB} 筆；{diagnostic}；耗時 {timer.Elapsed.TotalSeconds:F1} 秒。";
         }
         catch (OperationCanceledException) { Status = "已停止歷史觸發掃描。"; }

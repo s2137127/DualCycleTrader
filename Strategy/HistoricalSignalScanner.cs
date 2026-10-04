@@ -1,5 +1,6 @@
 using DualCycleTrader.Data;
 using DualCycleTrader.Models;
+using System.Diagnostics;
 
 namespace DualCycleTrader.Strategy;
 
@@ -40,20 +41,25 @@ public static class HistoricalSignalScanner
             .OrderBy(c => c.Time).GroupBy(c => c.Time.Date).Select(g => g.Last()).ToArray();
         var contexts = BuildContexts(marketBars, settings, earliestDate, today);
         var selected = new Dictionary<DateTime, List<StockInfo>>();
-        var relevantDays = contexts.Where(pair => targetDates is null || targetDates.Contains(pair.Key)).ToArray();
+        var relevantDays = contexts.Where(pair => targetDates is null || targetDates.Contains(pair.Key))
+            .OrderBy(pair => pair.Key).ToArray();
         for (int symbolIndex = 0; symbolIndex < universe.Count; symbolIndex++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var stock = universe[symbolIndex];
             var daily = getDaily(stock.Symbol).OrderBy(c => c.Time).ToArray();
+            int dailyIndex = -1;
             foreach (var (date,context) in relevantDays)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                while (dailyIndex + 1 < daily.Length &&
+                    daily[dailyIndex + 1].Time.Date <= context.DecisionDate)
+                    dailyIndex++;
                 var modes = ScannerCoordinator.ActiveScanners(context.State.ConfirmedTradingMode, settings);
                 if (modes.Count == 0) continue;
-                var dailyAtDecision = daily.Where(c => c.Time.Date <= context.DecisionDate).ToArray();
-                if (dailyAtDecision.Length < 130 || dailyAtDecision[^1].Time.Date != context.DecisionDate)
+                if (dailyIndex + 1 < 130 || daily[dailyIndex].Time.Date != context.DecisionDate)
                     continue;
+                IReadOnlyList<Candle> dailyAtDecision = new ArraySegment<Candle>(daily, 0, dailyIndex + 1);
                 if (ScannerCoordinator.Scan(stock.Symbol, stock.Name, dailyAtDecision,
                     context.MarketAtDecision, modes, settings).Count == 0) continue;
                 if (!selected.TryGetValue(date, out var stocks))
@@ -70,7 +76,8 @@ public static class HistoricalSignalScanner
     public sealed record StreamedDailyCandidates(
         IReadOnlyDictionary<DateTime, IReadOnlyList<StockInfo>> ByDate,
         Dictionary<string, List<Candle>> CandidateDaily,
-        int AStockDays, int BStockDays);
+        int AStockDays, int BStockDays,
+        TimeSpan ReadTime, TimeSpan ScanTime);
 
     public static async Task<StreamedDailyCandidates> FindDailyCandidatesByDateAsync(
         IReadOnlyList<Candle> market, IReadOnlyList<StockInfo> universe,
@@ -82,15 +89,20 @@ public static class HistoricalSignalScanner
         var marketBars = market.Where(c => c.Time.Date < today.Date)
             .OrderBy(c => c.Time).GroupBy(c => c.Time.Date).Select(g => g.Last()).ToArray();
         var contexts = BuildContexts(marketBars, settings, earliestDate, today);
-        var relevantDays = contexts.Where(pair => targetDates is null || targetDates.Contains(pair.Key)).ToArray();
+        var relevantDays = contexts.Where(pair => targetDates is null || targetDates.Contains(pair.Key))
+            .OrderBy(pair => pair.Key).ToArray();
         var selected = new Dictionary<DateTime, List<StockInfo>>();
         var candidateDaily = new Dictionary<string, List<Candle>>();
         int aStockDays = 0, bStockDays = 0;
+        TimeSpan readTime = TimeSpan.Zero, scanTime = TimeSpan.Zero;
         for (int start = 0; start < universe.Count; start += 24)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var batch = universe.Skip(start).Take(24).ToArray();
+            var watch = Stopwatch.StartNew();
             var barsByStock = await getDailyBatch(batch.Select(stock => stock.Symbol).ToArray());
+            readTime += watch.Elapsed;
+            watch.Restart();
             if (barsByStock.Count != batch.Length)
                 throw new InvalidDataException("歷史日 K 批次筆數與股票數不符。");
             for (int index = 0; index < batch.Length; index++)
@@ -99,14 +111,18 @@ public static class HistoricalSignalScanner
                 var stock = batch[index];
                 var daily = barsByStock[index].OrderBy(c => c.Time).ToArray();
                 bool matched = false;
+                int dailyIndex = -1;
                 foreach (var (date, context) in relevantDays)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    while (dailyIndex + 1 < daily.Length &&
+                        daily[dailyIndex + 1].Time.Date <= context.DecisionDate)
+                        dailyIndex++;
                     var modes = ScannerCoordinator.ActiveScanners(context.State.ConfirmedTradingMode, settings);
                     if (modes.Count == 0) continue;
-                    var dailyAtDecision = daily.Where(c => c.Time.Date <= context.DecisionDate).ToArray();
-                    if (dailyAtDecision.Length < 130 || dailyAtDecision[^1].Time.Date != context.DecisionDate)
+                    if (dailyIndex + 1 < 130 || daily[dailyIndex].Time.Date != context.DecisionDate)
                         continue;
+                    IReadOnlyList<Candle> dailyAtDecision = new ArraySegment<Candle>(daily, 0, dailyIndex + 1);
                     var candidate = ScannerCoordinator.Scan(stock.Symbol, stock.Name, dailyAtDecision,
                         context.MarketAtDecision, modes, settings).FirstOrDefault();
                     if (candidate is null) continue;
@@ -124,10 +140,11 @@ public static class HistoricalSignalScanner
                     await Task.Delay(1, cancellationToken);
                 }
             }
+            scanTime += watch.Elapsed;
         }
         return new(selected.ToDictionary(pair => pair.Key,
             pair => (IReadOnlyList<StockInfo>)pair.Value), candidateDaily,
-            aStockDays, bStockDays);
+            aStockDays, bStockDays, readTime, scanTime);
     }
 
     public static HistoricalSignalResult Scan(
