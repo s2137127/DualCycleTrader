@@ -133,11 +133,12 @@ public class HomeBase : ComponentBase
     private static DateTime TaiwanToday() => DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(8)).Date;
 
     private async Task<List<Candle>> EnsureCandles(string symbol, string timeframe,
-        int historyDays, CancellationToken token, DateTime? expectedDate = null)
+        int historyDays, CancellationToken token, DateTime? expectedDate = null,
+        List<Candle>? cached = null)
     {
         var today = TaiwanToday();
         var from = today.AddDays(-historyDays);
-        var existing = await Store.GetAsync(symbol, timeframe, from, today.AddDays(1));
+        var existing = cached ?? await Store.GetAsync(symbol, timeframe, from, today.AddDays(1));
         token.ThrowIfCancellationRequested();
         if (existing.Count == 0 || existing[^1].Time.Date < (expectedDate ?? today))
         {
@@ -167,27 +168,36 @@ public class HomeBase : ComponentBase
             ProgressMax = Universe.Count;
             var candidates = new List<StockInfo>();
             const int updateBatchSize = 6;
-            for (int start = 0; start < Universe.Count; start += updateBatchSize)
+            const int dailyReadBatchSize = 24;
+            for (int start = 0; start < Universe.Count; start += dailyReadBatchSize)
             {
                 token.ThrowIfCancellationRequested();
-                var batch = Universe.Skip(start).Take(updateBatchSize).ToArray();
-                var dailyBars = await Task.WhenAll(batch.Select(async stock =>
+                var readBatch = Universe.Skip(start).Take(dailyReadBatchSize).ToArray();
+                var cachedDaily = await Store.GetManyAsync(readBatch.Select(stock => stock.Symbol).ToArray(),
+                    "D", TaiwanToday().AddDays(-500), TaiwanToday().AddDays(1));
+                for (int offset = 0; offset < readBatch.Length; offset += updateBatchSize)
                 {
-                    try { return await EnsureCandles(stock.Symbol, "D", 500, token, market[^1].Time.Date); }
-                    catch (OperationCanceledException) { throw; }
-                    catch { return null; }
-                }));
-                for (int index = 0; index < batch.Length; index++)
-                {
-                    var stock = batch[index];
-                    var daily = dailyBars[index];
-                    if (daily is not null)
-                        foreach (var mode in new[] { MarketMode.A_BullTrend, MarketMode.B_BullRange,
-                            MarketMode.C_BearRange, MarketMode.E_Transition })
-                            if (StockScanner.Scan(stock.Symbol, stock.Name, daily, market, mode, Settings) is not null)
-                            { candidates.Add(stock); break; }
-                    Progress++; Status = $"更新日 K {Progress}/{Universe.Count}：{stock.Name}";
-                    if (Progress % 10 == 0) StateHasChanged();
+                    token.ThrowIfCancellationRequested();
+                    var batch = readBatch.Skip(offset).Take(updateBatchSize).ToArray();
+                    var dailyBars = await Task.WhenAll(batch.Select(async (stock, index) =>
+                    {
+                        try { return await EnsureCandles(stock.Symbol, "D", 500, token,
+                            market[^1].Time.Date, cachedDaily[offset + index]); }
+                        catch (OperationCanceledException) { throw; }
+                        catch { return null; }
+                    }));
+                    for (int index = 0; index < batch.Length; index++)
+                    {
+                        var stock = batch[index];
+                        var daily = dailyBars[index];
+                        if (daily is not null)
+                            foreach (var mode in new[] { MarketMode.A_BullTrend, MarketMode.B_BullRange,
+                                MarketMode.C_BearRange, MarketMode.E_Transition })
+                                if (StockScanner.Scan(stock.Symbol, stock.Name, daily, market, mode, Settings) is not null)
+                                { candidates.Add(stock); break; }
+                        Progress++; Status = $"更新日 K {Progress}/{Universe.Count}：{stock.Name}";
+                        if (Progress % 10 == 0) StateHasChanged();
+                    }
                 }
             }
             for (int start = 0; start < candidates.Count; start += updateBatchSize)
