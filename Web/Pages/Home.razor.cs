@@ -118,6 +118,7 @@ public class HomeBase : ComponentBase
             Settings.PullbackMinPercent = Math.Clamp(Settings.PullbackMinPercent, 0.1, 20);
             Settings.PullbackMaxPercent = Math.Clamp(Settings.PullbackMaxPercent,
                 Settings.PullbackMinPercent, 30);
+            Settings.PullbackEntryCrossWindowBars = Math.Clamp(Settings.PullbackEntryCrossWindowBars, 1, 5);
             Settings.PullbackDaysMin = Math.Clamp(Settings.PullbackDaysMin, 1, 10);
             Settings.PullbackDaysMax = Math.Clamp(Settings.PullbackDaysMax,
                 Settings.PullbackDaysMin, 15);

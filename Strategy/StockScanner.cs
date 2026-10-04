@@ -227,12 +227,35 @@ public static class StockScanner
         }
         else if(mode==MarketMode.B_BullRange)
         {
+            int crossWindow=Math.Clamp(settings.PullbackEntryCrossWindowBars,1,5);
+            bool recentMacdCross=macdCross, recentKCross=kCross;
+            if((macdCross || kCross) && crossWindow>1)
+            {
+                for(int offset=1;offset<crossWindow && (!recentMacdCross || !recentKCross);offset++)
+                {
+                    var current=x.Take(x.Count-offset).ToList();
+                    var previous=current.Take(current.Count-1).ToList();
+                    if(!recentMacdCross)
+                    {
+                        var m=Ta.Macd(current,settings.IntradayMacdFast,settings.IntradayMacdSlow,settings.IntradayMacdSignal);
+                        var p=Ta.Macd(previous,settings.IntradayMacdFast,settings.IntradayMacdSlow,settings.IntradayMacdSignal);
+                        recentMacdCross=m is not null && p is not null && p.Value.dif<=p.Value.dea && m.Value.dif>m.Value.dea;
+                    }
+                    if(!recentKCross)
+                    {
+                        var k=Ta.Kdj(current,9);
+                        var p=Ta.Kdj(previous,9);
+                        recentKCross=k is not null && p is not null && p.Value.k<=p.Value.d && k.Value.k>k.Value.d;
+                    }
+                }
+            }
             Require(supportHeld,"尚未確認守住前低或回到 MA20 附近");
             Require(noNewLow,"本根 60 分 K 仍創前一根新低");
             Require(rsi>50,$"RSI6 尚未站上 50（目前 {rsi:F1}）");
             Require(rsi>=prevRsi,$"RSI6 仍在下降（前值 {prevRsi:F1}，目前 {rsi:F1}）");
-            Require(macdCross,$"MACD({settings.IntradayMacdFast},{settings.IntradayMacdSlow},{settings.IntradayMacdSignal}) 尚未金叉");
-            Require(kCross,"KDJ 尚未金叉");
+            Require(macdCross || kCross,"本根尚未出現 MACD 或 KDJ 金叉");
+            Require(recentMacdCross && macd.dif>macd.dea,$"MACD({settings.IntradayMacdFast},{settings.IntradayMacdSlow},{settings.IntradayMacdSignal}) 未在最近 {crossWindow} 根金叉並維持多方");
+            Require(recentKCross && kdj.k>kdj.d,$"KDJ 未在最近 {crossWindow} 根金叉並維持多方");
             Require(volUp,"成交量尚未高於前 20 根均量");
         }
         else if(mode==MarketMode.C_BearRange)

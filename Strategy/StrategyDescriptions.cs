@@ -49,7 +49,7 @@ public static class StrategyDescriptions
             • 守住前低，或接近 MA20（±2%）
             • 不再破前一根低點
             • RSI({s.IntradayRsiPeriod}) 站上 50 且未轉弱
-            • MACD({s.IntradayMacdFast},{s.IntradayMacdSlow},{s.IntradayMacdSignal}) 金叉、KDJ 金叉
+            • MACD({s.IntradayMacdFast},{s.IntradayMacdSlow},{s.IntradayMacdSignal}) 與 KDJ 在最近 {Math.Clamp(s.PullbackEntryCrossWindowBars,1,5)} 根內先後金叉；本根至少有一個金叉，且兩者仍維持多方
             • 成交量高於前 20 根均量
 
             備註

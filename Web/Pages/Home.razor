@@ -37,6 +37,7 @@
                     <label>A 強量倍數<input type="number" step="0.1" @bind="Settings.BreakoutStrongVolumeRatio" /></label>
                     <label>B 回檔下限 %<input type="number" step="0.1" @bind="Settings.PullbackMinPercent" /></label>
                     <label>B 回檔上限 %<input type="number" step="0.1" @bind="Settings.PullbackMaxPercent" /></label>
+                    <label>B 60 分金叉窗口（根）<input type="number" min="1" max="5" @bind="Settings.PullbackEntryCrossWindowBars" /></label>
                 </div><button @onclick="SaveSettings">儲存設定</button>
             </details>
             <details><summary>匯入舊版行情 JSON</summary><p>選取 Data/MarketCache 中的 *_D.json 或 *_60.json；已存在的 K 棒會略過。</p><InputFile OnChange="ImportFiles" multiple /></details>

@@ -33,6 +33,7 @@ public sealed class StrategySettings
     public double BreakoutMaxAboveMa10Percent { get; set; } = 8.0;
     public double PullbackMinPercent { get; set; } = 5.0;
     public double PullbackMaxPercent { get; set; } = 12.0;
+    public int PullbackEntryCrossWindowBars { get; set; } = 3;
     public int PullbackHighLookbackDays { get; set; } = 10;
     public int PullbackDaysMin { get; set; } = 2;
     public int PullbackDaysMax { get; set; } = 5;

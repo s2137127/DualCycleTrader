@@ -149,6 +149,28 @@ Check(bDebug.HardConditions.ContainsKey("MACD 負柱縮短") &&
     bDebug.HardConditions.ContainsKey("RSI 介於 40～55") &&
     bDebug.HardConditions.ContainsKey("成交量低於前 20 日均量"),
     "B: original pullback filters are restored");
+var crossRandom = new Random(20261004);
+bool foundStaggeredCross = false;
+for (int sample = 0; sample < 1200 && !foundStaggeredCross; sample++)
+{
+    var prices = new decimal[78];
+    prices[0] = 100;
+    for (int i = 1; i < prices.Length; i++)
+        prices[i] = Math.Max(50m, prices[i - 1] + (decimal)(crossRandom.NextDouble() * 3.6 - 1.7));
+    var crossSeries = DailySeries(prices, 2000);
+    var narrow = new StrategySettings { PullbackEntryCrossWindowBars = 1 };
+    var wider = new StrategySettings { PullbackEntryCrossWindowBars = 3 };
+    var oldCheck = StockScanner.CheckEntry60m(crossSeries, MarketMode.B_BullRange, narrow);
+    var newCheck = StockScanner.CheckEntry60m(crossSeries, MarketMode.B_BullRange, wider);
+    if (oldCheck.IsMatch || !newCheck.IsMatch) continue;
+    foundStaggeredCross = true;
+    Check(!oldCheck.IsMatch && newCheck.IsMatch,
+        "B: a staggered crossover qualifies within three bars but not one");
+    Check(StockScanner.CheckEntry60m(crossSeries, MarketMode.A_BullTrend, narrow).IsMatch ==
+          StockScanner.CheckEntry60m(crossSeries, MarketMode.A_BullTrend, wider).IsMatch,
+        "A: B crossover window does not change A entry");
+}
+Check(foundStaggeredCross, "B: deterministic sample includes a qualifying staggered crossover");
 var oldDefaults = JsonSerializer.Deserialize<StrategySettings>(
     "{\"PullbackMinPercent\":3,\"PullbackMaxPercent\":10,\"ABScannerVersion\":2,\"BreakoutVolumeMultiple\":1.3}")!;
 oldDefaults.MigrateLegacyScannerDefaults();
