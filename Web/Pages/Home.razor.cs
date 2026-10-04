@@ -23,8 +23,8 @@ public class HomeBase : ComponentBase
     private readonly JsonSerializerOptions jsonOptions = new()
     { PropertyNameCaseInsensitive = true, Converters = { new JsonStringEnumConverter(),
         new TaiwanDateTimeConverter() } };
-    protected string? Email, Error;
-    protected string LoginEmail = "", Password = "", Status = "準備就緒", MarketText = "", MarketDetail = "";
+    protected string? Error;
+    protected string Status = "準備就緒", MarketText = "", MarketDetail = "";
     protected string ImportErrorDetails = "";
     protected string Simulation = "", Filter = "全部";
     protected string GuideMode = "A";
@@ -61,8 +61,8 @@ public class HomeBase : ComponentBase
             var config = await Http.GetFromJsonAsync<Config>("firebase-config.json", jsonOptions);
             if (config is null || string.IsNullOrWhiteSpace(config.ProjectId) ||
                 string.IsNullOrWhiteSpace(config.MarketApiBaseUrl)) return;
-            await JS.InvokeVoidAsync("import", "./js/stock-app.js?v=20261004-1");
-            Email = await JS.InvokeAsync<string?>("stockApp.initialize", new
+            await JS.InvokeVoidAsync("import", "./js/stock-app.js?v=20261004-2");
+            await JS.InvokeVoidAsync("stockApp.initialize", new
             {
                 apiKey = config.ApiKey, authDomain = config.AuthDomain,
                 projectId = config.ProjectId, appId = config.AppId,
@@ -73,27 +73,9 @@ public class HomeBase : ComponentBase
                 BaseAddress = new Uri(config.MarketApiBaseUrl.TrimEnd('/') + "/")
             });
             Configured = true;
-            if (Email is not null) await LoadState();
-        }
-        catch (Exception ex) { Error = ex.Message; }
-    }
-
-    protected async Task SignIn()
-    {
-        try
-        {
-            Error = null;
-            Email = await JS.InvokeAsync<string>("stockApp.signIn", LoginEmail, Password);
-            Password = "";
             await LoadState();
         }
         catch (Exception ex) { Error = ex.Message; }
-    }
-
-    protected async Task SignOut()
-    {
-        await JS.InvokeVoidAsync("stockApp.signOut");
-        Email = null; Universe.Clear(); Rows.Clear(); MarketText = "";
     }
 
     private async Task LoadState()

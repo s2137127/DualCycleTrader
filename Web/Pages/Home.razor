@@ -7,17 +7,8 @@
     <header><h1>雙週期選股系統</h1><p>手動更新行情，跨裝置查看分析結果</p></header>
     @if (Error is not null) { <p class="error" role="alert">@Error</p> }
     @if (!Configured) { <p class="notice">請先設定 Firebase 與行情代理網址。</p> }
-    else if (Email is null)
-    {
-        <section class="card login"><h2>登入</h2>
-            <label>電子郵件<input type="email" @bind="LoginEmail" /></label>
-            <label>密碼<input type="password" @bind="Password" /></label>
-            <button @onclick="SignIn">登入</button>
-        </section>
-    }
     else
     {
-        <div class="account">@Email <button class="secondary" @onclick="SignOut">登出</button></div>
         <section class="card">
             <div class="controls">
                 <button disabled="@Busy" @onclick="UpdateData">更新資料</button>

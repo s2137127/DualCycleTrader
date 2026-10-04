@@ -1,14 +1,13 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, connectAuthEmulator } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
 import { getFirestore, doc, getDoc, getDocFromServer, setDoc, updateDoc, FieldPath, connectFirestoreEmulator } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 
-let auth;
 let db;
 let cacheDatabase;
 let dataChanged = false;
 const candleMemory = new Map();
 const sessionRevisions = new Map();
 const memoryLimit = 96;
+const sharedUserId = '4qjqaWnyjQW5HVYAuaezaxBJYP02';
 
 function cacheKey(symbol, timeframe, month) {
     return `${requireUser()}|${symbol}|${timeframe}|${month}`;
@@ -146,8 +145,7 @@ async function clearCache() {
 }
 
 function requireUser() {
-    if (!auth?.currentUser) throw new Error('請先登入 Firebase。');
-    return auth.currentUser.uid;
+    return sharedUserId;
 }
 
 function candleRef(symbol, timeframe, month) {
@@ -188,27 +186,9 @@ function sameCandle(left, right) {
 window.stockApp = {
     async initialize(config) {
         const app = initializeApp(config);
-        auth = getAuth(app);
         db = getFirestore(app);
         if (config.useEmulators) {
-            connectAuthEmulator(auth, 'http://localhost:9099');
             connectFirestoreEmulator(db, 'localhost', 8080);
-        }
-        return await new Promise(resolve => onAuthStateChanged(auth, user => resolve(user?.email ?? null)));
-    },
-    async signIn(email, password) {
-        const result = await signInWithEmailAndPassword(auth, email, password);
-        return result.user.email;
-    },
-    async signOut() {
-        const uid = auth.currentUser?.uid;
-        await signOut(auth);
-        await clearCache();
-        dataChanged = false;
-        if (uid) {
-            sessionRevisions.delete(uid);
-            try { localStorage.removeItem(revisionKey(uid)); }
-            catch { /* Browser storage may be unavailable. */ }
         }
     },
     async syncRevision() {
