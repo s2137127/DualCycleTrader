@@ -1,4 +1,6 @@
-# 網頁版與桌面版
+﻿# 網頁版與桌面版
+
+目前 A／B 選股與 60 分 K 進場條件請見 [策略文件](STRATEGY.md)。
 
 網頁版的安裝、Firebase、匯入及 GitHub Pages 步驟請看 [WEB_README.md](WEB_README.md)。原桌面版說明如下。
 

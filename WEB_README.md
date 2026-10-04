@@ -1,4 +1,6 @@
-# 網頁版使用說明
+﻿# 網頁版使用說明
+
+目前 A／B 選股與 60 分 K 進場條件請見 [策略文件](STRATEGY.md)。
 
 原 WinForms 專案仍在根目錄。改造前原始碼備份在 `Backups/WinForms-before-web-migration-2026-10-03.zip`；另一份獨立備份是 Downloads 的 `DualCycleTrader_WinForms_backup_2026-10-03.zip`。`Core` 直接連結原本的 Models、Indicators、Strategy 原始碼，沒有修改公式或閾值。`Web` 是可部署到 GitHub Pages 的 Blazor WebAssembly 網頁；`MarketProxy` 是按使用者要求才向 Yahoo、臺灣證交所及櫃買中心取資料的 Cloudflare Worker。電腦不必長時間開機，也沒有排程監控。
 
