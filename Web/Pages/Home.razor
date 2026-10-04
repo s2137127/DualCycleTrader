@@ -26,6 +26,7 @@
             </div>
             <details><summary>策略設定</summary>
                 <div class="settings-grid">
+                    <label>最多候選檔數<input type="number" min="1" max="100" @bind="Settings.TopCandidates" /></label>
                     <label>日 K RSI<input type="number" @bind="Settings.DailyRsiPeriod" /></label>
                     <label>60 分 RSI<input type="number" @bind="Settings.IntradayRsiPeriod" /></label>
                     <label>日 K MACD 快<input type="number" @bind="Settings.DailyMacdFast" /></label>
@@ -34,6 +35,22 @@
                     <label>60 分 MACD 快<input type="number" @bind="Settings.IntradayMacdFast" /></label>
                     <label>60 分 MACD 慢<input type="number" @bind="Settings.IntradayMacdSlow" /></label>
                     <label>60 分 MACD 訊號<input type="number" @bind="Settings.IntradayMacdSignal" /></label>
+                    <label>A 短高天數<input type="number" @bind="Settings.BreakoutLookbackMin" /></label>
+                    <label>A 長高天數<input type="number" @bind="Settings.BreakoutLookbackMax" /></label>
+                    <label>A 接近突破 %<input type="number" step="0.1" @bind="Settings.NearBreakoutPercent" /></label>
+                    <label>A 強量倍數<input type="number" step="0.1" @bind="Settings.BreakoutStrongVolumeRatio" /></label>
+                    <label>A RSI 下限<input type="number" step="0.1" @bind="Settings.BreakoutRsiMin" /></label>
+                    <label>A RSI 偏熱<input type="number" step="0.1" @bind="Settings.BreakoutRsiOverheated" /></label>
+                    <label>B 回檔下限 %<input type="number" step="0.1" @bind="Settings.PullbackMinPercent" /></label>
+                    <label>B 回檔上限 %<input type="number" step="0.1" @bind="Settings.PullbackMaxPercent" /></label>
+                    <label>B 前高天數<input type="number" @bind="Settings.PullbackHighLookbackDays" /></label>
+                    <label>B 回檔最少天數<input type="number" @bind="Settings.PullbackDaysMin" /></label>
+                    <label>B 回檔最多天數<input type="number" @bind="Settings.PullbackDaysMax" /></label>
+                    <label>B 前段強勢天數<input type="number" @bind="Settings.PriorStrengthLookbackDays" /></label>
+                    <label>B 前段最低漲幅 %<input type="number" step="0.1" @bind="Settings.PriorStrengthMinGainPercent" /></label>
+                    <label>B RSI14 下限<input type="number" step="0.1" @bind="Settings.PullbackRsi14Min" /></label>
+                    <label>B RSI14 上限<input type="number" step="0.1" @bind="Settings.PullbackRsi14Max" /></label>
+                    <label>B 支撐容許 %<input type="number" step="0.1" @bind="Settings.SupportTolerancePercent" /></label>
                 </div><button @onclick="SaveSettings">儲存設定</button>
             </details>
             <details><summary>匯入舊版行情 JSON</summary><p>選取 Data/MarketCache 中的 *_D.json 或 *_60.json；已存在的 K 棒會略過。</p><InputFile OnChange="ImportFiles" multiple /></details>
@@ -45,6 +62,14 @@
         <section class="card"><details><summary>各策略條件與出場規則</summary>
             <label>策略<select @bind="GuideMode"><option value="A">A 突破</option><option value="B">B 回檔</option><option value="C">C 抗跌</option><option value="D">D 空手</option><option value="E">E 觀察</option></select></label>
             <pre class="guide">@GuideDescription</pre><pre class="guide">@ExitRules</pre>
+        </details></section>
+        <section class="card"><details><summary>單股 A/B Scanner Debug</summary>
+            <div class="controls">
+                <label>股票代號<input @bind="DebugSymbol" placeholder="例如 2305" /></label>
+                <label>策略<select @bind="DebugMode"><option value="A">A 短線突破</option><option value="B">B 短線回檔</option></select></label>
+                <button disabled="@Busy" @onclick="DebugOneStock">檢查日 K</button>
+            </div>
+            @if (DebugText.Length > 0) { <pre class="guide">@DebugText</pre> }
         </details></section>
         @if (Analyzing)
         {
@@ -61,8 +86,8 @@
         else
         {
         <section class="card"><h2>候選結果（@VisibleRows.Count）</h2>
-            <div class="table-wrap"><table><thead><tr><th>市場</th><th>代號</th><th>名稱</th><th>策略</th><th>收盤</th><th>漲跌幅</th><th>RSI</th><th>相對強度20</th><th>日 K MACD</th><th>日 K KDJ</th><th>日 K 原因</th><th>60 分訊號</th><th>60 分 MACD</th><th>60 分 KDJ</th><th>等待原因</th></tr></thead>
-                <tbody>@foreach (var row in VisibleRows) { <tr><td>@row.Market</td><td>@row.Symbol</td><td>@row.Name</td><td>@row.Strategy</td><td>@row.Close</td><td>@row.ChangePercent.ToString("F2")%</td><td>@row.Rsi.ToString("F1")</td><td>@row.RelativeStrength.ToString("F1")</td><td>@row.DailyMacd</td><td>@row.DailyKdj</td><td>@row.DailyReason</td><td>@row.HourlySignal</td><td>@row.HourlyMacd</td><td>@row.HourlyKdj</td><td>@row.WaitingReason</td></tr> }</tbody>
+            <div class="table-wrap"><table><thead><tr><th>市場</th><th>代號</th><th>名稱</th><th>策略</th><th>分數</th><th>收盤</th><th>漲跌幅</th><th>RSI</th><th>相對強度20</th><th>日 K MACD</th><th>日 K KDJ</th><th>日 K 原因</th><th>60 分訊號</th><th>60 分 MACD</th><th>60 分 KDJ</th><th>等待原因</th></tr></thead>
+                <tbody>@foreach (var row in VisibleRows) { <tr><td>@row.Market</td><td>@row.Symbol</td><td>@row.Name</td><td>@row.Strategy</td><td>@row.Rank.ToString("F1")</td><td>@row.Close</td><td>@row.ChangePercent.ToString("F2")%</td><td>@row.Rsi.ToString("F1")</td><td>@row.RelativeStrength.ToString("F1")</td><td>@row.DailyMacd</td><td>@row.DailyKdj</td><td>@row.DailyReason</td><td>@row.HourlySignal</td><td>@row.HourlyMacd</td><td>@row.HourlyKdj</td><td>@row.WaitingReason</td></tr> }</tbody>
             </table></div>
         </section>
         }

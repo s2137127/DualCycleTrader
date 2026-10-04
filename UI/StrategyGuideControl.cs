@@ -57,7 +57,7 @@ public sealed class StrategyGuideControl : UserControl
 
     public void RefreshContent()
     {
-        _parameterSummary.Text=$"目前參數：盤型連續確認 {Math.Max(1,_settings.MarketRegimeConfirmationDays)} 日｜多方雙選股 {(_settings.EnableBullishDualScanner?"A+B":"僅 A")}｜日 K RSI({_settings.DailyRsiPeriod})、MACD({_settings.DailyMacdFast},{_settings.DailyMacdSlow},{_settings.DailyMacdSignal})｜60 分 K RSI({_settings.IntradayRsiPeriod})、MACD({_settings.IntradayMacdFast},{_settings.IntradayMacdSlow},{_settings.IntradayMacdSignal})｜突破量 {_settings.BreakoutVolumeMultiple:0.##} 倍｜回檔 {_settings.PullbackMinPercent:0.##}～{_settings.PullbackMaxPercent:0.##}%｜相對強度 +{_settings.RelativeStrengthMin:0.##}%";
+        _parameterSummary.Text=$"目前參數：盤型連續確認 {Math.Max(1,_settings.MarketRegimeConfirmationDays)} 日｜多方雙選股 {(_settings.EnableBullishDualScanner?"A+B":"僅 A")}｜日 K RSI({_settings.DailyRsiPeriod})、MACD({_settings.DailyMacdFast},{_settings.DailyMacdSlow},{_settings.DailyMacdSignal})｜60 分 K RSI({_settings.IntradayRsiPeriod})、MACD({_settings.IntradayMacdFast},{_settings.IntradayMacdSlow},{_settings.IntradayMacdSignal})｜A 接近前高 {_settings.NearBreakoutPercent:0.##}%、強量加分 {_settings.BreakoutStrongVolumeRatio:0.##} 倍｜B 回檔 {_settings.PullbackMinPercent:0.##}～{_settings.PullbackMaxPercent:0.##}%｜C 相對強度 +{_settings.RelativeStrengthMin:0.##}%｜顯示前 {_settings.TopCandidates} 檔";
         if(_view==StrategyGuideView.Conditions && _description is not null)
         {
             var mode=(MarketMode)(_description.Tag ?? MarketMode.A_BullTrend);

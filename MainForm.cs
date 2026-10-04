@@ -21,6 +21,9 @@ public sealed class MainForm : Form
     private readonly Label _market=new(){AutoSize=true};
     private readonly Button _updateData=new(){Text="更新資料",Height=38,Width=110};
     private readonly Button _reanalyze=new(){Text="重新分析",Height=38,Width=110};
+    private readonly TextBox _debugSymbol=new(){Width=90,PlaceholderText="股票代號"};
+    private readonly ComboBox _debugMode=new(){Width=55,DropDownStyle=ComboBoxStyle.DropDownList};
+    private readonly Button _debugScan=new(){Text="日K Debug",Height=38,Width=95};
     private readonly Button _backtest=new(){Text="歷史日期分析",Height=38,Width=120};
     private readonly Button _signalHistory=new(){Text="觸發紀錄",Height=38,Width=95};
     private readonly Button _exportExcel=new(){Text="匯出 Excel",Height=38,Width=105};
@@ -103,6 +106,8 @@ public sealed class MainForm : Form
         _signalRange.SelectedIndex=0;
         _resultFilter.Items.AddRange(new object[]{"全部候選","A 突破","B 回檔","C 抗跌","60分已觸發"});
         _resultFilter.SelectedIndex=0;
+        _debugMode.Items.AddRange(new object[]{"A","B"});
+        _debugMode.SelectedIndex=0;
 
         var top=new TableLayoutPanel{Dock=DockStyle.Top,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,Padding=new Padding(12),ColumnCount=1,RowCount=7};
         top.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
@@ -132,6 +137,7 @@ public sealed class MainForm : Form
 
         var buttons=new FlowLayoutPanel{Dock=DockStyle.Fill,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=true,Margin=new Padding(0,4,0,4)};
         buttons.Controls.Add(_updateData); buttons.Controls.Add(_reanalyze);
+        buttons.Controls.Add(_debugSymbol); buttons.Controls.Add(_debugMode); buttons.Controls.Add(_debugScan);
         buttons.Controls.Add(new Label{Text="回測收 K 日（近半年）：",AutoSize=true,Padding=new Padding(10,10,0,0)});
         buttons.Controls.Add(_backtestDate); buttons.Controls.Add(_backtest);
         buttons.Controls.Add(new Label{Text="觸發期間：",AutoSize=true,Padding=new Padding(10,10,0,0)});
@@ -174,6 +180,7 @@ public sealed class MainForm : Form
 
         _updateData.Click+=async(_,__)=>await UpdateDataAsync();
         _reanalyze.Click+=async(_,__)=>await ReanalyzeAsync();
+        _debugScan.Click+=(_,__)=>DebugOneStock();
         _backtest.Click+=async(_,__)=>await ReanalyzeAsync(_backtestDate.Value.Date);
         _signalHistory.Click+=async(_,__)=>await ShowSignalHistoryAsync();
         _exportExcel.Click+=(_,__)=>ExportVisibleGrid();
@@ -198,6 +205,26 @@ public sealed class MainForm : Form
         _grid.CellFormatting+=GridCellFormatting;
         _grid.ColumnHeaderMouseClick+=GridColumnHeaderMouseClick;
         UpdateCacheInfo();
+    }
+
+    private void DebugOneStock()
+    {
+        string raw=_debugSymbol.Text.Trim();
+        if(raw.Length==0) { MessageBox.Show("請輸入股票代號。","日 K Debug"); return; }
+        var info=_latestUniverse.FirstOrDefault(s=>s.Symbol.Equals(raw,StringComparison.OrdinalIgnoreCase) ||
+            s.Symbol.Split('.')[0].Equals(raw,StringComparison.OrdinalIgnoreCase));
+        string symbol=info?.Symbol ?? (raw.Contains('.')?raw:raw+".TW");
+        var daily=_data.GetCachedDaily(symbol);
+        if(daily.Count==0 && info is null && !raw.Contains('.'))
+        { symbol=raw+".TWO"; daily=_data.GetCachedDaily(symbol); }
+        var market=_data.GetCachedDaily("^TWII");
+        var mode=_debugMode.SelectedIndex==1?MarketMode.B_BullRange:MarketMode.A_BullTrend;
+        var result=StockScanner.DebugScan(symbol,info?.Name??symbol,daily,market,mode,_settings);
+        MessageBox.Show($"{symbol}　{result.Date:yyyy/MM/dd}　{(result.Passed?"入選":"淘汰")}\r\n"+
+            $"分數 {result.Score:F1}\r\n\r\n"+
+            string.Join("\r\n",result.HardConditions.Select(c=>$"{(c.Value?"✓":"✗")} {c.Key}"))+
+            $"\r\n\r\n{result.Details}","單股日 K Scanner Debug",
+            MessageBoxButtons.OK,MessageBoxIcon.Information);
     }
 
     private void SaveSettings()
@@ -373,7 +400,8 @@ public sealed class MainForm : Form
             var found=scan.result;
             _progress.Value=_progress.Maximum;
 
-            var candidates=found.OrderByDescending(x=>Rank(x.C,x.C.Mode)).ToList();
+            var candidates=found.OrderByDescending(x=>Rank(x.C,x.C.Mode))
+                .Take(Math.Max(1,_settings.TopCandidates)).ToList();
             var analyzed=await Task.Run(()=>
             {
                 var result=new List<object>();
@@ -404,6 +432,8 @@ public sealed class MainForm : Form
                         市場=x.Info.Market,代號=x.Info.Symbol.Split('.')[0],名稱=x.Info.Name,
                         策略=string.Join("+",x.C.MatchedStrategies.Select(ModeCode)),日K狀態="符合",
                         日K原因=x.C.DailyConditions,
+                        候選分數=x.C.Mode is MarketMode.A_BullTrend or MarketMode.B_BullRange
+                            ?x.C.CandidateScore.ToString("F1"):"—",
                         收盤=x.C.Close,漲跌幅=Math.Round(x.C.ChangePercent,2),
                         RSI=Math.Round(x.C.Rsi14,1),相對強度20=Math.Round(x.C.RelativeStrength20,1),
                         日K_MACD=FormatMacd(x.C.DailyMacdDif,x.C.DailyMacdDea),
@@ -761,8 +791,8 @@ public sealed class MainForm : Form
     }
 
     private static double Rank(StockCandidate c,MarketMode m)=>m switch{
-        MarketMode.A_BullTrend=>c.RelativeStrength20+c.Rsi14/10,
-        MarketMode.B_BullRange=>c.RelativeStrength20-Math.Abs(c.Rsi14-47.5)/10,
+        MarketMode.A_BullTrend=>c.CandidateScore,
+        MarketMode.B_BullRange=>c.CandidateScore,
         MarketMode.C_BearRange=>c.RelativeStrength20+c.Rsi14/20,
         _=>c.RelativeStrength20
     };

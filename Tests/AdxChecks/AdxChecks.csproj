@@ -10,6 +10,7 @@
     <Compile Include="../../Models/Candle.cs" Link="Candle.cs" />
     <Compile Include="../../Models/MarketMode.cs" Link="MarketMode.cs" />
     <Compile Include="../../Models/StockCandidate.cs" Link="StockCandidate.cs" />
+    <Compile Include="../../Models/StockScanDebug.cs" Link="StockScanDebug.cs" />
     <Compile Include="../../Models/StrategySettings.cs" Link="StrategySettings.cs" />
     <Compile Include="../../Data/AppDataPaths.cs" Link="AppDataPaths.cs" />
     <Compile Include="../../Data/IMarketDataProvider.cs" Link="IMarketDataProvider.cs" />

@@ -16,9 +16,10 @@ public sealed class SettingsStore
     {
         try
         {
-            if (!File.Exists(_path)) return new StrategySettings();
-            return JsonSerializer.Deserialize<StrategySettings>(File.ReadAllText(_path))
-                   ?? new StrategySettings();
+            var settings = !File.Exists(_path) ? new StrategySettings() :
+                JsonSerializer.Deserialize<StrategySettings>(File.ReadAllText(_path)) ?? new StrategySettings();
+            settings.MigrateLegacyScannerDefaults();
+            return settings;
         }
         catch { return new StrategySettings(); }
     }

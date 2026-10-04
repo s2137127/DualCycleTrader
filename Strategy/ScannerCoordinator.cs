@@ -39,6 +39,7 @@ public static class ScannerCoordinator
             MatchedStrategies = matches.Select(c => c.Mode).ToArray(),
             Close = primary.Close, ChangePercent = primary.ChangePercent,
             Rsi14 = primary.Rsi14, RelativeStrength20 = primary.RelativeStrength20,
+            CandidateScore = matches.Max(c => c.CandidateScore),
             DailyMacdDif = primary.DailyMacdDif, DailyMacdDea = primary.DailyMacdDea,
             DailyK = primary.DailyK, DailyD = primary.DailyD, DailyJ = primary.DailyJ,
             Reason = string.Join("；", matches.Select(c => $"{c.StrategyType}：{c.Reason}"))

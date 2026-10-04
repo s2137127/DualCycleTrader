@@ -105,6 +105,70 @@ try
 finally { if (File.Exists(path)) File.Delete(path); }
 Console.WriteLine("Trading mode checks passed");
 
+static List<Candle> DailySeries(IEnumerable<decimal> prices, decimal lastVolume = 1000)
+{
+    var values = prices.ToArray();
+    return values.Select((close, index) => new Candle(
+        new DateTime(2024, 1, 1).AddDays(index), close,
+        close + 0.2m, close - 0.2m, close,
+        index == values.Length - 1 ? lastVolume : 1000)).ToList();
+}
+
+var aPrices = Enumerable.Range(0, 100).Select(i => 130m - i * 0.3m)
+    .Concat(Enumerable.Repeat(100m, 27))
+    .Concat(Enumerable.Range(1, 10).Select(i => 100m + i))
+    .Append(111m).ToArray();
+var aDaily = DailySeries(aPrices);
+var aMarket = DailySeries(Enumerable.Repeat(100m, aDaily.Count));
+var a1 = StockScanner.DebugScan("A.TW", "A", aDaily, aMarket, MarketMode.A_BullTrend, settings);
+Check(Ta.Sma(aDaily,100) < Ta.Sma(aDaily,100,1) && a1.Passed,
+    "A1: falling MA100 cannot exclude short breakout");
+var a2Daily = DailySeries(aPrices, 1300);
+var a2 = StockScanner.DebugScan("A.TW", "A", a2Daily, aMarket, MarketMode.A_BullTrend, settings);
+Check(a2.Passed && Math.Abs(a2.VolumeRatio - 1.3) < 0.01,
+    "A2: breakout with 1.3x volume qualifies");
+var a3Prices = aPrices.ToArray();
+a3Prices[^1] = 104m;
+var a3 = StockScanner.DebugScan("A.TW", "A", DailySeries(a3Prices), aMarket,
+    MarketMode.A_BullTrend, settings);
+Check(!a3.Passed && a3.HardConditions.Any(c => c.Key.Contains("高點") && !c.Value),
+    "A3: no recent high proximity excludes stock");
+
+var bPrices = Enumerable.Range(0, 117).Select(i => 130m - i * (30m / 116))
+    .Concat(Enumerable.Range(1, 10).Select(i => 100m + i))
+    .Concat(new[] { 108m, 106m, 103.4m }).ToArray();
+var bDaily = DailySeries(bPrices);
+for (int index = bDaily.Count - 3; index < bDaily.Count; index++)
+    bDaily[index] = bDaily[index] with { Volume = 600 };
+var bMarket = DailySeries(Enumerable.Repeat(100m, bDaily.Count));
+var b1 = StockScanner.DebugScan("B.TW", "B", bDaily, bMarket, MarketMode.B_BullRange, settings);
+Check(b1.Passed && b1.Close < b1.Ma10 && b1.PullbackDays == 3 && b1.PriorStrength,
+    "B1: strong 3-day pullback below MA10 qualifies");
+var b2 = StockScanner.DebugScan("B.TW", "B",
+    DailySeries(Enumerable.Repeat(100m, 127).Concat(new[] { 98m, 95m, 92m })),
+    bMarket, MarketMode.B_BullRange, settings);
+Check(!b2.Passed && !b2.PriorStrength, "B2: weak prior trend excludes pullback");
+var b3Daily = bDaily.ToArray();
+b3Daily[^1] = b3Daily[^1] with { Close = 93.5m, Low = 93.3m, High = 93.7m };
+var b3 = StockScanner.DebugScan("B.TW", "B", b3Daily, bMarket,
+    MarketMode.B_BullRange, settings);
+Check(!b3.Passed && b3.PullbackPercent > settings.PullbackMaxPercent,
+    "B3: 15 percent pullback exceeds healthy range");
+Check(Ta.Sma(bDaily,100) < Ta.Sma(bDaily,100,1) && b1.Passed,
+    "B4: falling MA100 cannot exclude healthy pullback");
+var flatHourly = DailySeries(Enumerable.Repeat(100m, 80));
+var b5Entry = StockScanner.CheckEntry60m(flatHourly, MarketMode.B_BullRange, settings);
+Check(b1.Candidate is not null && !b5Entry.IsMatch &&
+    b5Entry.UnmetConditions.Any(c => c.Contains("MACD")),
+    "B5: daily candidate remains while hourly MACD waits");
+var oldDefaults = JsonSerializer.Deserialize<StrategySettings>(
+    "{\"PullbackMinPercent\":5,\"PullbackMaxPercent\":12,\"BreakoutVolumeMultiple\":1.3}")!;
+oldDefaults.MigrateLegacyScannerDefaults();
+Check(oldDefaults.PullbackMinPercent == 3 && oldDefaults.PullbackMaxPercent == 10 &&
+    oldDefaults.BreakoutStrongVolumeRatio == 1.3,
+    "legacy A/B settings migrate without losing custom volume ratio");
+Console.WriteLine("Short-cycle A/B scanner checks passed");
+
 var historicalMarket = Candles(180);
 var historicalDate = historicalMarket[159].Time.Date;
 var asOf = HistoricalCandles.DailyAtClose(historicalMarket, historicalDate);

@@ -28,6 +28,7 @@ public class HomeBase : ComponentBase
     protected string ImportErrorDetails = "";
     protected string Simulation = "", Filter = "全部";
     protected string GuideMode = "A";
+    protected string DebugSymbol = "", DebugMode = "A", DebugText = "";
     protected DateTime HistoricalDate = DateTime.Today.AddDays(-1);
     protected StrategySettings Settings = new();
     protected List<StockInfo> Universe = new();
@@ -83,6 +84,7 @@ public class HomeBase : ComponentBase
     {
         var value = await JS.InvokeAsync<string?>("stockApp.getJson", "settings");
         if (value is not null) Settings = JsonSerializer.Deserialize<StrategySettings>(value, jsonOptions) ?? new();
+        Settings.MigrateLegacyScannerDefaults();
         value = await JS.InvokeAsync<string?>("stockApp.getJson", "universe");
         if (value is not null) Universe = JsonSerializer.Deserialize<List<StockInfo>>(value, jsonOptions) ?? new();
         value = await JS.InvokeAsync<string?>("stockApp.getJson", "latest-results");
@@ -104,6 +106,29 @@ public class HomeBase : ComponentBase
             Settings.IntradayMacdSlow = Math.Clamp(Math.Max(Settings.IntradayMacdSlow,
                 Settings.IntradayMacdFast + 1), 3, 150);
             Settings.IntradayMacdSignal = Math.Clamp(Settings.IntradayMacdSignal, 2, 100);
+            Settings.TopCandidates = Math.Clamp(Settings.TopCandidates, 1, 100);
+            Settings.BreakoutLookbackMin = Math.Clamp(Settings.BreakoutLookbackMin, 10, 60);
+            Settings.BreakoutLookbackMax = Math.Clamp(Settings.BreakoutLookbackMax,
+                Settings.BreakoutLookbackMin, 60);
+            Settings.NearBreakoutPercent = Math.Clamp(Settings.NearBreakoutPercent, 0.1, 10);
+            Settings.BreakoutStrongVolumeRatio = Math.Clamp(Settings.BreakoutStrongVolumeRatio, 0.5, 5);
+            Settings.BreakoutRsiMin = Math.Clamp(Settings.BreakoutRsiMin, 0, 99);
+            Settings.BreakoutRsiOverheated = Math.Clamp(Settings.BreakoutRsiOverheated,
+                Settings.BreakoutRsiMin + 1, 100);
+            Settings.PullbackMinPercent = Math.Clamp(Settings.PullbackMinPercent, 0.1, 20);
+            Settings.PullbackMaxPercent = Math.Clamp(Settings.PullbackMaxPercent,
+                Settings.PullbackMinPercent, 30);
+            Settings.PullbackDaysMin = Math.Clamp(Settings.PullbackDaysMin, 1, 10);
+            Settings.PullbackDaysMax = Math.Clamp(Settings.PullbackDaysMax,
+                Settings.PullbackDaysMin, 15);
+            Settings.PullbackHighLookbackDays = Math.Clamp(Settings.PullbackHighLookbackDays,
+                Settings.PullbackDaysMax + 1, 60);
+            Settings.PriorStrengthLookbackDays = Math.Clamp(Settings.PriorStrengthLookbackDays, 2, 60);
+            Settings.PriorStrengthMinGainPercent = Math.Clamp(Settings.PriorStrengthMinGainPercent, 0, 30);
+            Settings.PullbackRsi14Min = Math.Clamp(Settings.PullbackRsi14Min, 0, 100);
+            Settings.PullbackRsi14Max = Math.Clamp(Settings.PullbackRsi14Max,
+                Settings.PullbackRsi14Min, 100);
+            Settings.SupportTolerancePercent = Math.Clamp(Settings.SupportTolerancePercent, 0.1, 10);
             await JS.InvokeVoidAsync("stockApp.putJson", "settings", JsonSerializer.Serialize(Settings));
             Status = "設定已儲存。";
         }
@@ -116,6 +141,33 @@ public class HomeBase : ComponentBase
     private async Task SyncDataRevision()
     {
         if (await JS.InvokeAsync<bool>("stockApp.syncRevision")) Store.ClearCache();
+    }
+
+    protected async Task DebugOneStock()
+    {
+        try
+        {
+            Error = null;
+            var stock = Universe.FirstOrDefault(item =>
+                item.Symbol.Equals(DebugSymbol.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                item.Symbol.Split('.')[0].Equals(DebugSymbol.Trim(), StringComparison.OrdinalIgnoreCase));
+            if (stock is null) { DebugText = "股票代號不在目前清單中。"; return; }
+            await SyncDataRevision();
+            var today = TaiwanToday();
+            var daily = await Store.GetAsync(stock.Symbol, "D", today.AddDays(-550), today.AddDays(1));
+            var market = await Store.GetAsync("^TWII", "D", today.AddDays(-550), today.AddDays(1));
+            var mode = DebugMode == "B" ? MarketMode.B_BullRange : MarketMode.A_BullTrend;
+            var result = StockScanner.DebugScan(stock.Symbol, stock.Name, daily, market, mode, Settings);
+            DebugText = $"{stock.Symbol} {stock.Name}　{result.Date:yyyy/MM/dd}　{(result.Passed ? "入選" : "淘汰")}\n" +
+                $"Close {result.Close:F2}｜MA10 {result.Ma10:F2}｜MA20 {result.Ma20:F2}｜MA50 {result.Ma50:F2}｜MA100 {result.Ma100:F2}\n" +
+                $"RSI14 {result.Rsi14:F1}｜日K RSI6 {result.DailyRsi6:F1}｜MACD DIF {result.MacdDif:F3} / DEA {result.MacdDea:F3}\n" +
+                $"成交量 {result.Volume:F0}｜20 日均量 {result.AverageVolume20:F0}｜量比 {result.VolumeRatio:F2}｜相對強度 {result.RelativeStrength20:F1}%\n" +
+                $"近期高點 {result.RecentHigh:F2}｜距突破 {result.DistanceToBreakoutPercent:F1}%｜回檔 {result.PullbackPercent:F1}% / {result.PullbackDays} 日\n" +
+                $"前段強勢 {(result.PriorStrength ? "PASS" : "FAIL")}（{result.PriorStrengthGainPercent:F1}%）｜支撐 {result.Support:F2}（距離 {result.SupportDistancePercent:F1}%）｜回檔量比 {result.PullbackVolumeRatio:F2}\n" +
+                string.Join("\n", result.HardConditions.Select(item => $"{(item.Value ? "✓" : "✗")} {item.Key}")) +
+                $"\n分數 {result.Score:F1}\n{result.Details}";
+        }
+        catch (Exception ex) { Error = ex.Message; }
     }
     private static DateTime TaiwanToday() => DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(8)).Date;
 
@@ -252,7 +304,7 @@ public class HomeBase : ComponentBase
                 Status = "目前交易模式未啟動選股策略，分析完成。";
                 return;
             }
-            var results = new List<ResultRow>();
+            var found = new List<(StockInfo Stock, StockCandidate Candidate)>();
             ProgressMax = Universe.Count; Progress = 0;
             const int readBatchSize = 24;
             for (int start = 0; start < Universe.Count; start += readBatchSize)
@@ -272,34 +324,40 @@ public class HomeBase : ComponentBase
                     if (daily.Count >= 130 && (date is null || HistoricalCandles.HasCandleOn(daily, date.Value)))
                         foreach (var candidate in ScannerCoordinator.Scan(stock.Symbol, stock.Name,
                             daily, market, modes, Settings))
-                        {
-                            readStarted = timer.Elapsed;
-                            var hourly = await Store.GetAsync(stock.Symbol, "60", today.AddDays(-200), today.AddDays(1));
-                            hourlyReadTime += timer.Elapsed - readStarted;
-                            if (date is not null) hourly = HistoricalCandles.HourlyAtClose(hourly, date.Value);
-                            var checks = ScannerCoordinator.CheckEntries(hourly, candidate, Settings);
-                            var entry = checks.Values.FirstOrDefault(c => c.IsMatch) ?? checks.Values.First();
-                            bool enoughHistory = date is null ||
-                                (hourly.Count >= 70 && hourly.Any(c => c.Time.Date == date.Value.Date));
-                            string signal = !enoughHistory ? "歷史60分資料不足" : hourly.Count == 0 ? "尚未更新" :
-                                checks.Values.Any(c => c.IsMatch) ? "符合" : "等待";
-                            string reason = !enoughHistory ? "該交易日的 60 分 K 不足。" : hourly.Count == 0 ? "尚無 60 分 K 資料。" : string.Join("；",
-                                checks.Select(c => $"{c.Key}：{(c.Value.IsMatch ? "所有條件符合" : string.Join("、", c.Value.UnmetConditions))}"));
-                            results.Add(new(stock.Market, stock.Symbol.Split('.')[0], stock.Name,
-                                string.Join("+", candidate.MatchedStrategies.Select(m => m.ToString()[0])),
-                                candidate.Close, candidate.ChangePercent, candidate.Rsi14,
-                                candidate.RelativeStrength20, candidate.DailyConditions, signal, reason,
-                                Rank(candidate, candidate.Mode),
-                                FormatMacd(candidate.DailyMacdDif, candidate.DailyMacdDea),
-                                FormatKdj(candidate.DailyK, candidate.DailyD, candidate.DailyJ),
-                                FormatMacd(entry.MacdDif, entry.MacdDea),
-                                FormatKdj(entry.K, entry.D, entry.J)));
-                        }
+                            found.Add((stock,candidate));
                     Progress++; Status = $"分析 {Progress}/{Universe.Count}：{stock.Name}";
                     if (Progress % 100 == 0) StateHasChanged();
                 }
             }
-            Rows = results.OrderByDescending(r => r.Rank).ToList();
+            var topCandidates = found.OrderByDescending(item => Rank(item.Candidate,item.Candidate.Mode))
+                .Take(Math.Max(1,Settings.TopCandidates)).ToArray();
+            var results = new List<ResultRow>(topCandidates.Length);
+            foreach (var (stock,candidate) in topCandidates)
+            {
+                token.ThrowIfCancellationRequested();
+                readStarted = timer.Elapsed;
+                var hourly = await Store.GetAsync(stock.Symbol, "60", today.AddDays(-200), today.AddDays(1));
+                hourlyReadTime += timer.Elapsed - readStarted;
+                if (date is not null) hourly = HistoricalCandles.HourlyAtClose(hourly, date.Value);
+                var checks = ScannerCoordinator.CheckEntries(hourly, candidate, Settings);
+                var entry = checks.Values.FirstOrDefault(c => c.IsMatch) ?? checks.Values.First();
+                bool enoughHistory = date is null ||
+                    (hourly.Count >= 70 && hourly.Any(c => c.Time.Date == date.Value.Date));
+                string signal = !enoughHistory ? "歷史60分資料不足" : hourly.Count == 0 ? "尚未更新" :
+                    checks.Values.Any(c => c.IsMatch) ? "符合" : "等待";
+                string reason = !enoughHistory ? "該交易日的 60 分 K 不足。" : hourly.Count == 0 ? "尚無 60 分 K 資料。" : string.Join("；",
+                    checks.Select(c => $"{c.Key}：{(c.Value.IsMatch ? "所有條件符合" : string.Join("、", c.Value.UnmetConditions))}"));
+                results.Add(new(stock.Market, stock.Symbol.Split('.')[0], stock.Name,
+                    string.Join("+", candidate.MatchedStrategies.Select(m => m.ToString()[0])),
+                    candidate.Close, candidate.ChangePercent, candidate.Rsi14,
+                    candidate.RelativeStrength20, candidate.DailyConditions, signal, reason,
+                    Rank(candidate, candidate.Mode),
+                    FormatMacd(candidate.DailyMacdDif, candidate.DailyMacdDea),
+                    FormatKdj(candidate.DailyK, candidate.DailyD, candidate.DailyJ),
+                    FormatMacd(entry.MacdDif, entry.MacdDea),
+                    FormatKdj(entry.K, entry.D, entry.J)));
+            }
+            Rows = results;
             await JS.InvokeVoidAsync("stockApp.putJson", "latest-results", JsonSerializer.Serialize(Rows));
             Status = $"分析完成：{Rows.Count} 筆候選結果；耗時 {timer.Elapsed.TotalSeconds:F1} 秒（日 K 載入 {dailyReadTime.TotalSeconds:F1} 秒、60 分 K 載入 {hourlyReadTime.TotalSeconds:F1} 秒）。";
         }
@@ -487,6 +545,7 @@ public class HomeBase : ComponentBase
                     using var settingsStream = file.OpenReadStream(1_000_000);
                     Settings = await JsonSerializer.DeserializeAsync<StrategySettings>(settingsStream, jsonOptions)
                         ?? throw new InvalidDataException("設定格式錯誤。");
+                    Settings.MigrateLegacyScannerDefaults();
                     await SaveSettings();
                     continue;
                 }
@@ -542,11 +601,11 @@ public class HomeBase : ComponentBase
         }
         else
         {
-            table.Add(new[] { "市場", "代號", "名稱", "策略", "收盤", "漲跌幅", "RSI", "相對強度20",
+            table.Add(new[] { "市場", "代號", "名稱", "策略", "分數", "收盤", "漲跌幅", "RSI", "相對強度20",
                 "日K_MACD", "日K_KDJ", "日K原因", "60分訊號", "60分K_MACD", "60分K_KDJ", "等待原因" });
             table.AddRange(VisibleRows.Select(r => (IReadOnlyList<string>)new[]
             {
-                r.Market,r.Symbol,r.Name,r.Strategy,r.Close.ToString(),r.ChangePercent.ToString("F2"),
+                r.Market,r.Symbol,r.Name,r.Strategy,r.Rank.ToString("F1"),r.Close.ToString(),r.ChangePercent.ToString("F2"),
                 r.Rsi.ToString("F1"),r.RelativeStrength.ToString("F1"),r.DailyMacd,r.DailyKdj,
                 r.DailyReason,r.HourlySignal,r.HourlyMacd,r.HourlyKdj,r.WaitingReason
             }));
@@ -569,8 +628,8 @@ public class HomeBase : ComponentBase
         $"K {k:F1} / D {d:F1} / J {j:F1}";
     private static double Rank(StockCandidate candidate, MarketMode mode) => mode switch
     {
-        MarketMode.A_BullTrend => candidate.RelativeStrength20 + candidate.Rsi14 / 10,
-        MarketMode.B_BullRange => candidate.RelativeStrength20 - Math.Abs(candidate.Rsi14 - 47.5) / 10,
+        MarketMode.A_BullTrend => candidate.CandidateScore,
+        MarketMode.B_BullRange => candidate.CandidateScore,
         MarketMode.C_BearRange => candidate.RelativeStrength20 + candidate.Rsi14 / 20,
         _ => candidate.RelativeStrength20
     };
