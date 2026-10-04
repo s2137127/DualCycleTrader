@@ -113,6 +113,11 @@ public static class StockScanner
             hard[$"接近或突破前 {shortLookback} 日高點"]=breakoutDistance<=s.NearBreakoutPercent;
             hard[$"日 K RSI({s.DailyRsiPeriod}) > {s.BreakoutRsiMin:0.#}"]=rsi14>s.BreakoutRsiMin;
             hard["日 K MACD DIF > DEA"]=macd.dif>macd.dea;
+            double aboveMa10Percent=ma10>0?(close/ma10-1)*100:double.PositiveInfinity;
+            hard[$"20 日相對大盤強度 > {s.BreakoutRelativeStrengthMin:0.#}%"]=
+                relativeStrength>s.BreakoutRelativeStrengthMin;
+            hard[$"股價高於 MA10 不超過 {s.BreakoutMaxAboveMa10Percent:0.#}%"]=
+                aboveMa10Percent<=s.BreakoutMaxAboveMa10Percent;
             bool breakout=close>=recentHigh;
             bool overheated=rsi14>=s.BreakoutRsiOverheated;
             score=ScoreWeight.BreakoutProximity+
@@ -130,6 +135,7 @@ public static class StockScanner
                 $"量比 {volumeRatio:F2}（{(volumeRatio>=s.BreakoutStrongVolumeRatio?"強量":"量能評分")}）；"+
                 $"RSI14 {rsi14:F1}{(overheated?"，日K RSI偏熱":"")}；"+
                 $"MACD DIF {macd.dif:F3} / DEA {macd.dea:F3}；相對強度 {relativeStrength:+0.0;-0.0;0.0}%；"+
+                $"高於 MA10 {aboveMa10Percent:F1}%；"+
                 $"MA10 {(ma10>=priorMa10?"↑":"↓")} / MA20 {(ma20>=priorMa20?"↑":"↓")}；分數 {score:F1}";
         }
         else

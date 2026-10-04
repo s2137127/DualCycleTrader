@@ -112,6 +112,8 @@ public class HomeBase : ComponentBase
             Settings.NearBreakoutPercent = Math.Clamp(Settings.NearBreakoutPercent, 0.1, 10);
             Settings.BreakoutStrongVolumeRatio = Math.Clamp(Settings.BreakoutStrongVolumeRatio, 0.5, 5);
             Settings.BreakoutRsiMin = Math.Clamp(Settings.BreakoutRsiMin, 0, 99);
+            Settings.BreakoutRelativeStrengthMin = Math.Clamp(Settings.BreakoutRelativeStrengthMin, -20, 30);
+            Settings.BreakoutMaxAboveMa10Percent = Math.Clamp(Settings.BreakoutMaxAboveMa10Percent, 0, 30);
             Settings.BreakoutRsiOverheated = Math.Clamp(Settings.BreakoutRsiOverheated,
                 Settings.BreakoutRsiMin + 1, 100);
             Settings.PullbackMinPercent = Math.Clamp(Settings.PullbackMinPercent, 0.1, 20);

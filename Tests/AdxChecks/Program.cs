@@ -127,6 +127,21 @@ var a2Daily = DailySeries(aPrices, 1300);
 var a2 = StockScanner.DebugScan("A.TW", "A", a2Daily, aMarket, MarketMode.A_BullTrend, settings);
 Check(a2.Passed && Math.Abs(a2.VolumeRatio - 1.3) < 0.01,
     "A2: breakout with 1.3x volume qualifies");
+var strongMarket = DailySeries(Enumerable.Repeat(100m, aDaily.Count - 20)
+    .Concat(Enumerable.Range(1, 20).Select(i => 100m + i)));
+var aWeakRs = StockScanner.DebugScan("A.TW", "A", aDaily, strongMarket,
+    MarketMode.A_BullTrend, settings);
+Check(!aWeakRs.Passed && aWeakRs.HardConditions.Any(c =>
+    c.Key.Contains("相對大盤強度") && !c.Value),
+    "A: weak relative strength is filtered");
+var aExtendedDaily = aDaily.ToArray();
+aExtendedDaily[^1] = aExtendedDaily[^1] with
+    { Close = 120m, High = 120.2m, Low = 119.8m };
+var aExtended = StockScanner.DebugScan("A.TW", "A", aExtendedDaily, aMarket,
+    MarketMode.A_BullTrend, settings);
+Check(!aExtended.Passed && aExtended.HardConditions.Any(c =>
+    c.Key.Contains("MA10 不超過") && !c.Value),
+    "A: price far above MA10 is filtered");
 var a3Prices = aPrices.ToArray();
 a3Prices[^1] = 104m;
 var a3 = StockScanner.DebugScan("A.TW", "A", DailySeries(a3Prices), aMarket,

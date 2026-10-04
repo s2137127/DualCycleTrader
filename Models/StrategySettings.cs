@@ -29,6 +29,8 @@ public sealed class StrategySettings
     public double NearBreakoutPercent { get; set; } = 2.0;
     public double BreakoutRsiMin { get; set; } = 55.0;
     public double BreakoutRsiOverheated { get; set; } = 75.0;
+    public double BreakoutRelativeStrengthMin { get; set; } = 3.0;
+    public double BreakoutMaxAboveMa10Percent { get; set; } = 8.0;
     public double PullbackMinPercent { get; set; } = 3.0;
     public double PullbackMaxPercent { get; set; } = 10.0;
     public int PullbackHighLookbackDays { get; set; } = 10;

@@ -16,6 +16,7 @@ public static class StrategyDescriptions
             • 股價 > MA20，MA20 不下降；MA10 向上及股價站上 MA10 加分
             • 接近或突破前 {s.BreakoutLookbackMin} 日高點（距離不超過 {s.NearBreakoutPercent:0.##}%）；前 {s.BreakoutLookbackMax} 日新高加分
             • RSI({s.DailyRsiPeriod}) > {s.BreakoutRsiMin:0.##}；達 {s.BreakoutRsiOverheated:0.##} 標記偏熱並扣分
+            • 20 日相對大盤強度 > {s.BreakoutRelativeStrengthMin:0.##}%，股價高於 MA10 不超過 {s.BreakoutMaxAboveMa10Percent:0.##}%
             • MACD({s.DailyMacdFast},{s.DailyMacdSlow},{s.DailyMacdSignal}) DIF > DEA
             • 成交量比、相對大盤強度、MA50 趨勢作為評分；強量標準 {s.BreakoutStrongVolumeRatio:0.##} 倍，不是入選門檻
             • MA100 僅供觀察，不作為 A 入選門檻
