@@ -210,10 +210,11 @@ var targetDays = new HashSet<DateTime> { signalDay };
 var synchronousCandidates = HistoricalSignalScanner.FindDailyCandidatesByDate(signalMarket,
     universe, _ => signalMarket, settings, signalDay, signalDay.AddDays(1), targetDays);
 var responsiveCandidates = await HistoricalSignalScanner.FindDailyCandidatesByDateAsync(signalMarket,
-    universe, _ => signalMarket, settings, signalDay, signalDay.AddDays(1), targetDays);
-Check(synchronousCandidates.Keys.Order().SequenceEqual(responsiveCandidates.Keys.Order()) &&
+    universe, _ => Task.FromResult(new List<List<Candle>> { signalMarket }),
+    settings, signalDay, signalDay.AddDays(1), targetDays);
+Check(synchronousCandidates.Keys.Order().SequenceEqual(responsiveCandidates.ByDate.Keys.Order()) &&
     synchronousCandidates.All(pair => pair.Value.Select(stock => stock.Symbol)
-        .SequenceEqual(responsiveCandidates[pair.Key].Select(stock => stock.Symbol))),
+        .SequenceEqual(responsiveCandidates.ByDate[pair.Key].Select(stock => stock.Symbol))),
     "responsive daily candidate scan matches original result");
 int seenDailyCount = 0;
 var signalReport = HistoricalSignalScanner.ScanCore(signalMarket, universe,

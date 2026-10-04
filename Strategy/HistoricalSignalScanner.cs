@@ -67,9 +67,14 @@ public static class HistoricalSignalScanner
             pair => (IReadOnlyList<StockInfo>)pair.Value);
     }
 
-    public static async Task<IReadOnlyDictionary<DateTime, IReadOnlyList<StockInfo>>> FindDailyCandidatesByDateAsync(
+    public sealed record StreamedDailyCandidates(
+        IReadOnlyDictionary<DateTime, IReadOnlyList<StockInfo>> ByDate,
+        Dictionary<string, List<Candle>> CandidateDaily);
+
+    public static async Task<StreamedDailyCandidates> FindDailyCandidatesByDateAsync(
         IReadOnlyList<Candle> market, IReadOnlyList<StockInfo> universe,
-        Func<string, List<Candle>> getDaily, StrategySettings settings,
+        Func<IReadOnlyList<string>, Task<List<List<Candle>>>> getDailyBatch,
+        StrategySettings settings,
         DateTime earliestDate, DateTime today, IReadOnlySet<DateTime>? targetDates,
         CancellationToken cancellationToken = default, IProgress<int>? progress = null)
     {
@@ -78,33 +83,45 @@ public static class HistoricalSignalScanner
         var contexts = BuildContexts(marketBars, settings, earliestDate, today);
         var relevantDays = contexts.Where(pair => targetDates is null || targetDates.Contains(pair.Key)).ToArray();
         var selected = new Dictionary<DateTime, List<StockInfo>>();
-        for (int symbolIndex = 0; symbolIndex < universe.Count; symbolIndex++)
+        var candidateDaily = new Dictionary<string, List<Candle>>();
+        for (int start = 0; start < universe.Count; start += 24)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var stock = universe[symbolIndex];
-            var daily = getDaily(stock.Symbol).OrderBy(c => c.Time).ToArray();
-            foreach (var (date, context) in relevantDays)
+            var batch = universe.Skip(start).Take(24).ToArray();
+            var barsByStock = await getDailyBatch(batch.Select(stock => stock.Symbol).ToArray());
+            if (barsByStock.Count != batch.Length)
+                throw new InvalidDataException("歷史日 K 批次筆數與股票數不符。");
+            for (int index = 0; index < batch.Length; index++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var modes = ScannerCoordinator.ActiveScanners(context.State.ConfirmedTradingMode, settings);
-                if (modes.Count == 0) continue;
-                var dailyAtDecision = daily.Where(c => c.Time.Date <= context.DecisionDate).ToArray();
-                if (dailyAtDecision.Length < 130 || dailyAtDecision[^1].Time.Date != context.DecisionDate)
-                    continue;
-                if (ScannerCoordinator.Scan(stock.Symbol, stock.Name, dailyAtDecision,
-                    context.MarketAtDecision, modes, settings).Count == 0) continue;
-                if (!selected.TryGetValue(date, out var stocks))
-                    selected[date] = stocks = new List<StockInfo>();
-                stocks.Add(stock);
-            }
-            if (symbolIndex % 8 == 7 || symbolIndex == universe.Count - 1)
-            {
-                progress?.Report(symbolIndex + 1);
-                await Task.Delay(1, cancellationToken);
+                var stock = batch[index];
+                var daily = barsByStock[index].OrderBy(c => c.Time).ToArray();
+                bool matched = false;
+                foreach (var (date, context) in relevantDays)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var modes = ScannerCoordinator.ActiveScanners(context.State.ConfirmedTradingMode, settings);
+                    if (modes.Count == 0) continue;
+                    var dailyAtDecision = daily.Where(c => c.Time.Date <= context.DecisionDate).ToArray();
+                    if (dailyAtDecision.Length < 130 || dailyAtDecision[^1].Time.Date != context.DecisionDate)
+                        continue;
+                    if (ScannerCoordinator.Scan(stock.Symbol, stock.Name, dailyAtDecision,
+                        context.MarketAtDecision, modes, settings).Count == 0) continue;
+                    if (!selected.TryGetValue(date, out var stocks))
+                        selected[date] = stocks = new List<StockInfo>();
+                    stocks.Add(stock);
+                    matched = true;
+                }
+                if (matched) candidateDaily[stock.Symbol] = barsByStock[index];
+                if ((start + index) % 8 == 7 || start + index == universe.Count - 1)
+                {
+                    progress?.Report(start + index + 1);
+                    await Task.Delay(1, cancellationToken);
+                }
             }
         }
-        return selected.ToDictionary(pair => pair.Key,
-            pair => (IReadOnlyList<StockInfo>)pair.Value);
+        return new(selected.ToDictionary(pair => pair.Key,
+            pair => (IReadOnlyList<StockInfo>)pair.Value), candidateDaily);
     }
 
     public static HistoricalSignalResult Scan(

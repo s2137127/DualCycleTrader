@@ -398,6 +398,20 @@ public class HomeBase : ComponentBase
         => await JS.InvokeVoidAsync("stockApp.putJson", $"signals-{archive.Fingerprint}-{month}",
             JsonSerializer.Serialize(archive, jsonOptions));
 
+    private async Task<HistoricalSignalArchive> LoadSignalDay(DateTime date, string fingerprint)
+    {
+        string? json = await JS.InvokeAsync<string?>("stockApp.getJson",
+            $"signals-{fingerprint}-{date:yyyyMMdd}");
+        return json is null ? new HistoricalSignalArchive { Fingerprint = fingerprint } :
+            JsonSerializer.Deserialize<HistoricalSignalArchive>(json, jsonOptions) ??
+            new HistoricalSignalArchive { Fingerprint = fingerprint };
+    }
+
+    private async Task SaveSignalDay(DateTime date, HistoricalSignalArchive archive)
+        => await JS.InvokeVoidAsync("stockApp.putJson",
+            $"signals-{archive.Fingerprint}-{date:yyyyMMdd}",
+            JsonSerializer.Serialize(archive, jsonOptions));
+
     protected async Task ShowSignalHistory()
     {
         Begin();
@@ -418,28 +432,25 @@ public class HomeBase : ComponentBase
             var archives = new Dictionary<string, HistoricalSignalArchive>();
             foreach (var month in Months(earliest, today))
                 archives[month] = await LoadSignalMonth(month, fingerprint);
-            var analyzed = archives.Values.SelectMany(a => a.AnalyzedDates)
+            var legacyAnalyzed = archives.Values.SelectMany(a => a.AnalyzedDates)
                 .Concat(archives.Values.SelectMany(a => a.CompletedDates)).Select(d => d.Date).ToHashSet();
+            var dayArchives = new Dictionary<DateTime, HistoricalSignalArchive>();
+            var daysToLoad = tradingDates.Where(date => !legacyAnalyzed.Contains(date)).ToArray();
+            for (int start = 0; start < daysToLoad.Length; start += 12)
+            {
+                var dates = daysToLoad.Skip(start).Take(12).ToArray();
+                var loaded = await Task.WhenAll(dates.Select(date => LoadSignalDay(date, fingerprint)));
+                for (int index = 0; index < dates.Length; index++)
+                    dayArchives[dates[index]] = loaded[index];
+            }
+            var analyzed = legacyAnalyzed.Concat(dayArchives.Values.SelectMany(a => a.AnalyzedDates))
+                .Concat(dayArchives.Values.SelectMany(a => a.CompletedDates))
+                .Select(d => d.Date).ToHashSet();
             var missing = tradingDates.Where(d => !analyzed.Contains(d)).ToHashSet();
             if (missing.Count > 0)
             {
-                var daily = new Dictionary<string, List<Candle>>();
                 ProgressMax = Universe.Count; Progress = 0;
-                const int historyReadBatchSize = 24;
-                for (int start = 0; start < Universe.Count; start += historyReadBatchSize)
-                {
-                    token.ThrowIfCancellationRequested();
-                    var batch = Universe.Skip(start).Take(historyReadBatchSize).ToArray();
-                    var bars = await Store.GetManyAsync(batch.Select(stock => stock.Symbol).ToArray(),
-                        "D", earliest.AddDays(-250), today.AddDays(1));
-                    for (int index = 0; index < batch.Length; index++)
-                        daily[batch[index].Symbol] = bars[index];
-                    Progress += batch.Length;
-                    Status = $"讀取歷史日 K {Progress}/{Universe.Count}";
-                    StateHasChanged();
-                }
-                ProgressMax = Universe.Count; Progress = 0;
-                Status = "正在篩選歷史日 K 候選股…";
+                Status = "正在讀取及篩選歷史日 K…";
                 StateHasChanged();
                 await Task.Delay(1, token);
                 var dailyProgress = new Progress<int>(count =>
@@ -448,9 +459,17 @@ public class HomeBase : ComponentBase
                     Status = $"篩選歷史日 K {count}/{Universe.Count}";
                     StateHasChanged();
                 });
-                var byDate = await HistoricalSignalScanner.FindDailyCandidatesByDateAsync(market, Universe,
-                    symbol => daily.GetValueOrDefault(symbol) ?? new(), Settings, missing.Min(), today,
+                var streamed = await HistoricalSignalScanner.FindDailyCandidatesByDateAsync(market, Universe,
+                    async symbols =>
+                    {
+                        var bars = await Store.GetManyAsync(symbols, "D",
+                            earliest.AddDays(-250), today.AddDays(1));
+                        Store.ClearCache();
+                        return bars;
+                    }, Settings, missing.Min(), today,
                     missing, token, dailyProgress);
+                var byDate = streamed.ByDate;
+                var daily = streamed.CandidateDaily;
                 var candidates = byDate.Values.SelectMany(s => s).DistinctBy(s => s.Symbol).ToArray();
                 var hourly = new Dictionary<string, List<Candle>>();
                 ProgressMax = candidates.Length; Progress = 0;
@@ -508,19 +527,32 @@ public class HomeBase : ComponentBase
                          bars.Count(c => c.Time.Date == date) < 5));
                     if (ready) completed.Add(date);
                 }
+                daily.Clear();
+                hourly.Clear();
+                Store.ClearCache();
                 var merger = new HistoricalSignalStore("unused-web-signals");
-                foreach (var month in archives.Keys.ToArray())
+                var groupedSignals = reportSignals.GroupBy(s => s.TriggerTime.Date)
+                    .ToDictionary(group => group.Key, group => group.ToArray());
+                ProgressMax = missing.Count; Progress = 0;
+                foreach (var date in missing.OrderBy(d => d))
                 {
-                    var dates = missing.Where(d => d.ToString("yyyyMM") == month).ToArray();
-                    if (dates.Length == 0) continue;
-                    var archive = merger.Merge(archives[month], dates,
-                        completed.Where(d => d.ToString("yyyyMM") == month),
-                        reportSignals.Where(s => s.TriggerTime.ToString("yyyyMM") == month));
-                    await SaveSignalMonth(month, archive);
-                    archives[month] = archive;
+                    token.ThrowIfCancellationRequested();
+                    var archive = merger.Merge(dayArchives[date], new[] { date },
+                        completed.Contains(date) ? new[] { date } : Array.Empty<DateTime>(),
+                        groupedSignals.GetValueOrDefault(date) ?? Array.Empty<HistoricalSignal>());
+                    await SaveSignalDay(date, archive);
+                    dayArchives[date] = archive;
+                    Progress++;
+                    Status = $"儲存觸發紀錄 {Progress}/{missing.Count} 個交易日";
+                    StateHasChanged();
+                    await Task.Delay(1, token);
                 }
             }
+            var dayStored = dayArchives.Where(pair => pair.Value.AnalyzedDates.Any(d => d.Date == pair.Key))
+                .Select(pair => pair.Key).ToHashSet();
             SignalRows = archives.Values.SelectMany(a => a.Signals)
+                .Where(s => !dayStored.Contains(s.TriggerTime.Date))
+                .Concat(dayArchives.Values.SelectMany(a => a.Signals))
                 .Where(s => s.TriggerTime.Date >= earliest && s.TriggerTime.Date < today)
                 .OrderByDescending(s => s.TriggerTime).ToList();
             HistoryVisibleCount = 100;
