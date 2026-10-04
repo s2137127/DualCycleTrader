@@ -78,15 +78,15 @@ public sealed class HistoricalSignalStore
         File.Move(temporary, _path, true);
     }
 
-    private static string Fingerprint(StrategySettings settings)
+    public static string Fingerprint(StrategySettings settings)
     {
-        string input = "historical-entry-v1\n" + JsonSerializer.Serialize(settings);
+        string input = "historical-entry-v2-original-a-b-ma20-ma50\n" + JsonSerializer.Serialize(settings);
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(input)));
     }
 
     private static string LegacyFingerprint(StrategySettings settings, IEnumerable<string> symbols)
     {
-        string input = "historical-entry-v1\n" + JsonSerializer.Serialize(settings) + "\n" +
+        string input = "historical-entry-v2-original-a-b-ma20-ma50\n" + JsonSerializer.Serialize(settings) + "\n" +
             string.Join("\n", symbols.OrderBy(s => s, StringComparer.Ordinal));
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(input)));
     }

@@ -1,7 +1,5 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Security.Cryptography;
-using System.Text;
 using System.Diagnostics;
 using DualCycleTrader;
 using System.Net.Http.Json;
@@ -377,8 +375,7 @@ public class HomeBase : ComponentBase
         finally { Analyzing = false; End(); }
     }
 
-    private string SignalFingerprint => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
-        "historical-entry-v1\n" + JsonSerializer.Serialize(Settings))));
+    private string SignalFingerprint => HistoricalSignalStore.Fingerprint(Settings);
 
     private static IEnumerable<string> Months(DateTime from, DateTime to)
     {
@@ -447,6 +444,8 @@ public class HomeBase : ComponentBase
                 .Concat(dayArchives.Values.SelectMany(a => a.CompletedDates))
                 .Select(d => d.Date).ToHashSet();
             var missing = tradingDates.Where(d => !analyzed.Contains(d)).ToHashSet();
+            int newDailyA = 0, newDailyB = 0, completedDays = 0;
+            int hourlyReady = 0, hourlyExpected = 0;
             if (missing.Count > 0)
             {
                 ProgressMax = Universe.Count; Progress = 0;
@@ -468,6 +467,8 @@ public class HomeBase : ComponentBase
                         return bars;
                     }, Settings, missing.Min(), today,
                     missing, token, dailyProgress);
+                newDailyA = streamed.AStockDays;
+                newDailyB = streamed.BStockDays;
                 var byDate = streamed.ByDate;
                 var daily = streamed.CandidateDaily;
                 var candidates = byDate.Values.SelectMany(s => s).DistinctBy(s => s.Symbol).ToArray();
@@ -520,13 +521,20 @@ public class HomeBase : ComponentBase
                 var completed = new HashSet<DateTime>();
                 foreach (var date in missing)
                 {
-                    bool ready = !byDate.GetValueOrDefault(date, Array.Empty<StockInfo>()).Any(stock =>
-                        daily[stock.Symbol].Any(c => c.Time.Date == date) &&
-                        (!hourly.TryGetValue(stock.Symbol, out var bars) ||
-                         bars.Count(c => c.Time.Date <= date) < 70 ||
-                         bars.Count(c => c.Time.Date == date) < 5));
+                    bool ready = true;
+                    foreach (var stock in byDate.GetValueOrDefault(date, Array.Empty<StockInfo>()))
+                    {
+                        if (!daily[stock.Symbol].Any(c => c.Time.Date == date)) continue;
+                        hourlyExpected++;
+                        if (hourly.TryGetValue(stock.Symbol, out var bars) &&
+                            bars.Count(c => c.Time.Date <= date) >= 70 &&
+                            bars.Count(c => c.Time.Date == date) >= 5)
+                            hourlyReady++;
+                        else ready = false;
+                    }
                     if (ready) completed.Add(date);
                 }
+                completedDays = completed.Count;
                 daily.Clear();
                 hourly.Clear();
                 Store.ClearCache();
@@ -557,7 +565,11 @@ public class HomeBase : ComponentBase
                 .OrderByDescending(s => s.TriggerTime).ToList();
             HistoryVisibleCount = 100;
             ShowingHistory = true;
-            Status = $"觸發紀錄 {SignalRows.Count} 筆；本次新增分析 {missing.Count} 個交易日；耗時 {timer.Elapsed.TotalSeconds:F1} 秒。";
+            int historyA = SignalRows.Count(s => s.Strategies.Contains(MarketMode.A_BullTrend));
+            int historyB = SignalRows.Count(s => s.Strategies.Contains(MarketMode.B_BullRange));
+            string diagnostic = missing.Count == 0 ? "已讀取既有紀錄" :
+                $"本次日 K 候選 A {newDailyA}／B {newDailyB} 筆（股票×日期），60 分資料足夠 {hourlyReady}/{hourlyExpected} 筆候選、完整交易日 {completedDays}/{missing.Count}";
+            Status = $"觸發紀錄 A {historyA}／B {historyB} 筆；{diagnostic}；耗時 {timer.Elapsed.TotalSeconds:F1} 秒。";
         }
         catch (OperationCanceledException) { Status = "已停止歷史觸發掃描。"; }
         catch (Exception ex) { Error = ex.Message; Status = "觸發紀錄讀取失敗。"; }

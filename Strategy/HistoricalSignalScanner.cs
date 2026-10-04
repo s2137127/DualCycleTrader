@@ -69,7 +69,8 @@ public static class HistoricalSignalScanner
 
     public sealed record StreamedDailyCandidates(
         IReadOnlyDictionary<DateTime, IReadOnlyList<StockInfo>> ByDate,
-        Dictionary<string, List<Candle>> CandidateDaily);
+        Dictionary<string, List<Candle>> CandidateDaily,
+        int AStockDays, int BStockDays);
 
     public static async Task<StreamedDailyCandidates> FindDailyCandidatesByDateAsync(
         IReadOnlyList<Candle> market, IReadOnlyList<StockInfo> universe,
@@ -84,6 +85,7 @@ public static class HistoricalSignalScanner
         var relevantDays = contexts.Where(pair => targetDates is null || targetDates.Contains(pair.Key)).ToArray();
         var selected = new Dictionary<DateTime, List<StockInfo>>();
         var candidateDaily = new Dictionary<string, List<Candle>>();
+        int aStockDays = 0, bStockDays = 0;
         for (int start = 0; start < universe.Count; start += 24)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -105,8 +107,11 @@ public static class HistoricalSignalScanner
                     var dailyAtDecision = daily.Where(c => c.Time.Date <= context.DecisionDate).ToArray();
                     if (dailyAtDecision.Length < 130 || dailyAtDecision[^1].Time.Date != context.DecisionDate)
                         continue;
-                    if (ScannerCoordinator.Scan(stock.Symbol, stock.Name, dailyAtDecision,
-                        context.MarketAtDecision, modes, settings).Count == 0) continue;
+                    var candidate = ScannerCoordinator.Scan(stock.Symbol, stock.Name, dailyAtDecision,
+                        context.MarketAtDecision, modes, settings).FirstOrDefault();
+                    if (candidate is null) continue;
+                    if (candidate.MatchedStrategies.Contains(MarketMode.A_BullTrend)) aStockDays++;
+                    if (candidate.MatchedStrategies.Contains(MarketMode.B_BullRange)) bStockDays++;
                     if (!selected.TryGetValue(date, out var stocks))
                         selected[date] = stocks = new List<StockInfo>();
                     stocks.Add(stock);
@@ -121,7 +126,8 @@ public static class HistoricalSignalScanner
             }
         }
         return new(selected.ToDictionary(pair => pair.Key,
-            pair => (IReadOnlyList<StockInfo>)pair.Value), candidateDaily);
+            pair => (IReadOnlyList<StockInfo>)pair.Value), candidateDaily,
+            aStockDays, bStockDays);
     }
 
     public static HistoricalSignalResult Scan(

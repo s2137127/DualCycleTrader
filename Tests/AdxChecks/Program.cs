@@ -246,6 +246,12 @@ Console.WriteLine("Historical trigger checks passed");
 
 var signalPath = Path.Combine(Path.GetTempPath(), $"dct-signal-store-{Guid.NewGuid():N}.json");
 var signalStore = new HistoricalSignalStore(signalPath);
+var obsoleteFingerprint = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+    System.Text.Encoding.UTF8.GetBytes("historical-entry-v1\n" + JsonSerializer.Serialize(settings))));
+signalStore.Save(new HistoricalSignalArchive
+{ Fingerprint = obsoleteFingerprint, AnalyzedDates = new() { signalDay } });
+Check(signalStore.Load(settings, universe.Select(s => s.Symbol)).AnalyzedDates.Count == 0,
+    "historical signals from an older strategy version are recalculated");
 var signalArchive = signalStore.Load(settings, universe.Select(s => s.Symbol));
 signalArchive = signalStore.Merge(signalArchive, new[] { signalDay }, new[] { signalDay },
     signalReport.Signals);
