@@ -1,4 +1,4 @@
-@page "/"
+﻿@page "/"
 @using Microsoft.AspNetCore.Components.Forms
 @inherits HomeBase
 
@@ -34,24 +34,9 @@
                     <label>60 分 MACD 快<input type="number" @bind="Settings.IntradayMacdFast" /></label>
                     <label>60 分 MACD 慢<input type="number" @bind="Settings.IntradayMacdSlow" /></label>
                     <label>60 分 MACD 訊號<input type="number" @bind="Settings.IntradayMacdSignal" /></label>
-                    <label>A 短高天數<input type="number" @bind="Settings.BreakoutLookbackMin" /></label>
-                    <label>A 長高天數<input type="number" @bind="Settings.BreakoutLookbackMax" /></label>
-                    <label>A 接近突破 %<input type="number" step="0.1" @bind="Settings.NearBreakoutPercent" /></label>
                     <label>A 強量倍數<input type="number" step="0.1" @bind="Settings.BreakoutStrongVolumeRatio" /></label>
-                    <label>A RSI 下限<input type="number" step="0.1" @bind="Settings.BreakoutRsiMin" /></label>
-                    <label>A 相對大盤強度下限 %<input type="number" step="0.1" @bind="Settings.BreakoutRelativeStrengthMin" /></label>
-                    <label>A 高於 MA10 上限 %<input type="number" step="0.1" @bind="Settings.BreakoutMaxAboveMa10Percent" /></label>
-                    <label>A RSI 偏熱<input type="number" step="0.1" @bind="Settings.BreakoutRsiOverheated" /></label>
                     <label>B 回檔下限 %<input type="number" step="0.1" @bind="Settings.PullbackMinPercent" /></label>
                     <label>B 回檔上限 %<input type="number" step="0.1" @bind="Settings.PullbackMaxPercent" /></label>
-                    <label>B 前高天數<input type="number" @bind="Settings.PullbackHighLookbackDays" /></label>
-                    <label>B 回檔最少天數<input type="number" @bind="Settings.PullbackDaysMin" /></label>
-                    <label>B 回檔最多天數<input type="number" @bind="Settings.PullbackDaysMax" /></label>
-                    <label>B 前段強勢天數<input type="number" @bind="Settings.PriorStrengthLookbackDays" /></label>
-                    <label>B 前段最低漲幅 %<input type="number" step="0.1" @bind="Settings.PriorStrengthMinGainPercent" /></label>
-                    <label>B RSI14 下限<input type="number" step="0.1" @bind="Settings.PullbackRsi14Min" /></label>
-                    <label>B RSI14 上限<input type="number" step="0.1" @bind="Settings.PullbackRsi14Max" /></label>
-                    <label>B 支撐容許 %<input type="number" step="0.1" @bind="Settings.SupportTolerancePercent" /></label>
                 </div><button @onclick="SaveSettings">儲存設定</button>
             </details>
             <details><summary>匯入舊版行情 JSON</summary><p>選取 Data/MarketCache 中的 *_D.json 或 *_60.json；已存在的 K 棒會略過。</p><InputFile OnChange="ImportFiles" multiple /></details>

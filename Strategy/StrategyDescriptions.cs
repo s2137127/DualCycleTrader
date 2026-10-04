@@ -1,4 +1,4 @@
-using DualCycleTrader.Models;
+﻿using DualCycleTrader.Models;
 
 namespace DualCycleTrader.Strategy;
 
@@ -7,19 +7,19 @@ public static class StrategyDescriptions
     public static string For(MarketMode mode, StrategySettings s) => mode switch
     {
         MarketMode.A_BullTrend => $"""
-            A 短線突破（確認多方結構下的候選策略）
+            A 突破型（確認多方結構下的候選策略）
 
             目的
-            尋找未來約 3～5 個交易日可能延續強勢的突破或接近突破股票。
+            在強勢多頭環境尋找突破型強勢股。
 
             日 K 主要條件
-            • 股價 > MA20，MA20 不下降；MA10 向上及股價站上 MA10 加分
-            • 接近或突破前 {s.BreakoutLookbackMin} 日高點（距離不超過 {s.NearBreakoutPercent:0.##}%）；前 {s.BreakoutLookbackMax} 日新高加分
-            • RSI({s.DailyRsiPeriod}) > {s.BreakoutRsiMin:0.##}；達 {s.BreakoutRsiOverheated:0.##} 標記偏熱並扣分
-            • 20 日相對大盤強度 > {s.BreakoutRelativeStrengthMin:0.##}%，股價高於 MA10 不超過 {s.BreakoutMaxAboveMa10Percent:0.##}%
+            • 股價 > MA20 > MA50 > MA100
+            • MA20、MA50、MA100 向上
+            • RSI({s.DailyRsiPeriod}) > 55
             • MACD({s.DailyMacdFast},{s.DailyMacdSlow},{s.DailyMacdSignal}) DIF > DEA
-            • 成交量比、相對大盤強度、MA50 趨勢作為評分；強量標準 {s.BreakoutStrongVolumeRatio:0.##} 倍，不是入選門檻
-            • MA100 僅供觀察，不作為 A 入選門檻
+            • 突破或接近 20 日高點（前高的 99% 以上）
+            • 真正突破時，成交量須達 20 日均量 {s.BreakoutVolumeMultiple:0.##} 倍
+            • 20 日相對強度優於大盤
 
             60 分鐘 K 確認
             • 突破前 20 根高點且成交量放大
@@ -32,18 +32,18 @@ public static class StrategyDescriptions
             """,
 
         MarketMode.B_BullRange => $"""
-            B 短線回檔（確認多方結構下的候選策略）
+            B 回檔型（確認多方結構下的候選策略）
 
             目的
-            尋找前段強勢、近期健康回檔並等待 60 分 K 再轉強的股票。
+            多頭結構仍在，但不追高，等待強勢股回檔。
 
             日 K 主要條件
-            • 高點前 {s.PriorStrengthLookbackDays} 日至少上漲 {s.PriorStrengthMinGainPercent:0.##}%，且高點收盤在當時 MA20 之上
-            • 最近 {s.PullbackHighLookbackDays} 日高點後回檔 {s.PullbackDaysMin}～{s.PullbackDaysMax} 日，幅度 {s.PullbackMinPercent:0.##}～{s.PullbackMaxPercent:0.##}%
-            • MA20 不下降，股價未明顯跌破 MA20，距 MA10／MA20／前高支撐不超過 {s.SupportTolerancePercent:0.##}%
-            • 整段回檔平均量低於此前 20 日平均量
-            • RSI({s.DailyRsiPeriod}) 在 {s.PullbackRsi14Min:0.##}～{s.PullbackRsi14Max:0.##}、日 K RSI6 降溫、MACD 修正、MA50 作為加分
-            • MA100 不作為 B 入選門檻
+            • 股價 > MA20 > MA50
+            • MA20、MA50 向上
+            • 前 20 日高點回檔 {s.PullbackMinPercent:0.##}～{s.PullbackMaxPercent:0.##}%
+            • RSI({s.DailyRsiPeriod}) 介於 40～55
+            • MACD 負柱縮短
+            • 回檔成交量低於 20 日均量
 
             60 分鐘 K 確認
             • 守住前低，或接近 MA20（±2%）

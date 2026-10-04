@@ -31,8 +31,8 @@ public sealed class StrategySettings
     public double BreakoutRsiOverheated { get; set; } = 75.0;
     public double BreakoutRelativeStrengthMin { get; set; } = 3.0;
     public double BreakoutMaxAboveMa10Percent { get; set; } = 8.0;
-    public double PullbackMinPercent { get; set; } = 3.0;
-    public double PullbackMaxPercent { get; set; } = 10.0;
+    public double PullbackMinPercent { get; set; } = 5.0;
+    public double PullbackMaxPercent { get; set; } = 12.0;
     public int PullbackHighLookbackDays { get; set; } = 10;
     public int PullbackDaysMin { get; set; } = 2;
     public int PullbackDaysMax { get; set; } = 5;
@@ -45,10 +45,10 @@ public sealed class StrategySettings
 
     public void MigrateLegacyScannerDefaults()
     {
-        if (ABScannerVersion != 0) return;
-        if (PullbackMinPercent == 5.0 && PullbackMaxPercent == 12.0)
-        { PullbackMinPercent = 3.0; PullbackMaxPercent = 10.0; }
-        ABScannerVersion = 2;
+        if (ABScannerVersion >= 3) return;
+        if (ABScannerVersion > 0 && PullbackMinPercent == 3.0 && PullbackMaxPercent == 10.0)
+        { PullbackMinPercent = 5.0; PullbackMaxPercent = 12.0; }
+        ABScannerVersion = 3;
     }
     public double RelativeStrengthMin { get; set; } = 5.0;
     public double ProfitRetracePercent { get; set; } = 30.0;

@@ -9,23 +9,9 @@ public static class StockScanner
         bool IsMatch,IReadOnlyList<string> UnmetConditions,
         double MacdDif,double MacdDea,double K,double D,double J);
 
-    private static class ScoreWeight
-    {
-        public const double BreakoutProximity=20, BreakoutConfirmed=10, LongBreakout=10;
-        public const double BreakoutVolume=15, BreakoutRelativeStrength=25;
-        public const double ShortTrend=5, PriceAboveMa10=5, LongTrend=5, HealthyRsi=5;
-        public const double OverheatedPenalty=15;
-        public const double PriorStrength=20, HealthyPullback=20, Support=15;
-        public const double VolumeContraction=15, RsiCooling=10, ShortRsiCooling=5;
-        public const double MacdCooling=10, PullbackRelativeStrength=5;
-        public const double RelativeStrengthFullScorePercent=10;
-    }
-
     public static StockCandidate? Scan(string symbol, string name, IReadOnlyList<Candle> x,
         IReadOnlyList<Candle> market, MarketMode mode, StrategySettings s)
     {
-        if (mode is MarketMode.A_BullTrend or MarketMode.B_BullRange)
-            return DebugScan(symbol, name, x, market, mode, s).Candidate;
         if(x.Count<130 || market.Count<30 || mode==MarketMode.D_BearTrend) return null;
         double close=(double)x[^1].Close;
         double ma20=Ta.Sma(x,20)!.Value, ma50=Ta.Sma(x,50)!.Value, ma100=Ta.Sma(x,100)!.Value;
@@ -44,7 +30,24 @@ public static class StockScanner
         bool volumePattern = downDay ? vol < avgVol : vol > avgVol;
 
         bool ok=false; string reason="";
-        if(mode==MarketMode.C_BearRange)
+        if(mode==MarketMode.A_BullTrend)
+        {
+            bool breakoutOrNear = close >= high20 * 0.99;
+            ok=close>ma20 && ma20>ma50 && ma50>ma100 && ma20up && ma50up && ma100up &&
+               rsi>55 && macd.dif>macd.dea && breakoutOrNear && rs>0 &&
+               (!(close>high20) || (avgVol>0 && vol>=avgVol*s.BreakoutVolumeMultiple));
+            reason=$"20日高附近/突破＋相對大盤強{rs:F1}%";
+        }
+        else if(mode==MarketMode.B_BullRange)
+        {
+            double recentHigh=x.TakeLast(20).Max(c=>(double)c.High);
+            double pullback=(recentHigh-close)/recentHigh*100;
+            ok=close>ma20 && ma20>ma50 && ma20up && ma50up &&
+               pullback>=s.PullbackMinPercent && pullback<=s.PullbackMaxPercent &&
+               vol<avgVol && rsi>=40 && rsi<=55 && negativeHistShrinking;
+            reason=$"回檔{pullback:F1}%＋量縮＋MACD負柱縮短";
+        }
+        else if(mode==MarketMode.C_BearRange)
         {
             bool nearOrAbove50=close>=ma50 || Math.Abs(close-ma50)/ma50*100<=s.NearMaPercent;
             bool holdPriorLow=(double)x[^1].Low >= (double)x.Take(x.Count-1).TakeLast(20).Min(c=>c.Low);
@@ -82,154 +85,54 @@ public static class StockScanner
         double close=(double)x[^1].Close;
         double ma10=Ta.Sma(x,10)!.Value, ma20=Ta.Sma(x,20)!.Value;
         double ma50=Ta.Sma(x,50)!.Value, ma100=Ta.Sma(x,100)!.Value;
-        double priorMa10=Ta.Sma(x,10,1)!.Value, priorMa20=Ta.Sma(x,20,1)!.Value;
-        double priorMa50=Ta.Sma(x,50,1)!.Value;
-        double rsi14=Ta.Rsi(x,s.DailyRsiPeriod)??50;
-        double rsi6=Ta.Rsi(x,6)??50;
+        double rsi=Ta.Rsi(x,s.DailyRsiPeriod)??50;
         var macd=Ta.Macd(x,s.DailyMacdFast,s.DailyMacdSlow,s.DailyMacdSignal)??(0,0,0);
-        var previousMacd=Ta.Macd(x.Take(x.Count-1).ToArray(),s.DailyMacdFast,
+        var priorMacd=Ta.Macd(x.Take(x.Count-1).ToArray(),s.DailyMacdFast,
             s.DailyMacdSlow,s.DailyMacdSignal)??(0,0,0);
-        double avgVol=Ta.AvgVolume(x,20,1)??0, volume=(double)x[^1].Volume;
-        double volumeRatio=avgVol>0?volume/avgVol:0;
+        double averageVolume=Ta.AvgVolume(x,20,1)??0;
+        double volume=(double)x[^1].Volume;
         double relativeStrength=RelativeStrength20(x,market);
         var hard=new Dictionary<string,bool>();
-        double score, recentHigh, breakoutDistance=0, pullback=0;
-        double support=0, supportDistance=0, pullbackVolumeRatio=0, priorGain=0;
-        int pullbackDays=0;
-        bool priorStrength=false;
-        string details;
-
+        double recentHigh, breakoutDistance=0, pullback=0;
         if (mode==MarketMode.A_BullTrend)
         {
-            int shortLookback=Math.Clamp(s.BreakoutLookbackMin,10,60);
-            int longLookback=Math.Clamp(s.BreakoutLookbackMax,shortLookback,60);
-            recentHigh=x.Skip(x.Count-1-shortLookback).Take(shortLookback)
-                .Max(c=>(double)c.High);
-            double longHigh=x.Skip(x.Count-1-longLookback).Take(longLookback)
-                .Max(c=>(double)c.High);
+            recentHigh=x.Take(x.Count-1).TakeLast(20).Max(c=>(double)c.High);
             breakoutDistance=recentHigh>0?(recentHigh-close)/recentHigh*100:100;
-            hard["股價高於 MA20"]=close>ma20;
-            hard["MA20 未下降"]=ma20>=priorMa20;
-            hard[$"接近或突破前 {shortLookback} 日高點"]=breakoutDistance<=s.NearBreakoutPercent;
-            hard[$"日 K RSI({s.DailyRsiPeriod}) > {s.BreakoutRsiMin:0.#}"]=rsi14>s.BreakoutRsiMin;
-            hard["日 K MACD DIF > DEA"]=macd.dif>macd.dea;
-            double aboveMa10Percent=ma10>0?(close/ma10-1)*100:double.PositiveInfinity;
-            hard[$"20 日相對大盤強度 > {s.BreakoutRelativeStrengthMin:0.#}%"]=
-                relativeStrength>s.BreakoutRelativeStrengthMin;
-            hard[$"股價高於 MA10 不超過 {s.BreakoutMaxAboveMa10Percent:0.#}%"]=
-                aboveMa10Percent<=s.BreakoutMaxAboveMa10Percent;
-            bool breakout=close>=recentHigh;
-            bool overheated=rsi14>=s.BreakoutRsiOverheated;
-            score=ScoreWeight.BreakoutProximity+
-                (breakout?ScoreWeight.BreakoutConfirmed:0)+
-                (close>=longHigh?ScoreWeight.LongBreakout:0)+
-                Math.Clamp(volumeRatio/Math.Max(s.BreakoutStrongVolumeRatio,0.01),0,1)*ScoreWeight.BreakoutVolume+
-                Math.Clamp(relativeStrength/ScoreWeight.RelativeStrengthFullScorePercent,0,1)*
-                    ScoreWeight.BreakoutRelativeStrength+
-                (ma10>=priorMa10?ScoreWeight.ShortTrend:0)+
-                (close>ma10?ScoreWeight.PriceAboveMa10:0)+
-                (close>ma50 && ma50>=priorMa50?ScoreWeight.LongTrend:0)+
-                (!overheated?ScoreWeight.HealthyRsi:-ScoreWeight.OverheatedPenalty);
-            details=$"股價 {close:F2} / MA10 {ma10:F2} / MA20 {ma20:F2} / MA50 {ma50:F2} / MA100 {ma100:F2}；"+
-                $"前{shortLookback}日高 {recentHigh:F2}，距突破 {breakoutDistance:F1}%（{(breakout?"已突破":"Near Breakout")}）；"+
-                $"量比 {volumeRatio:F2}（{(volumeRatio>=s.BreakoutStrongVolumeRatio?"強量":"量能評分")}）；"+
-                $"RSI14 {rsi14:F1}{(overheated?"，日K RSI偏熱":"")}；"+
-                $"MACD DIF {macd.dif:F3} / DEA {macd.dea:F3}；相對強度 {relativeStrength:+0.0;-0.0;0.0}%；"+
-                $"高於 MA10 {aboveMa10Percent:F1}%；"+
-                $"MA10 {(ma10>=priorMa10?"↑":"↓")} / MA20 {(ma20>=priorMa20?"↑":"↓")}；分數 {score:F1}";
+            hard["股價 > MA20 > MA50 > MA100"]=close>ma20 && ma20>ma50 && ma50>ma100;
+            hard["MA20、MA50、MA100 向上"]=ma20>Ta.Sma(x,20,5) &&
+                ma50>Ta.Sma(x,50,5) && ma100>Ta.Sma(x,100,20);
+            hard["RSI > 55"]=rsi>55;
+            hard["MACD DIF > DEA"]=macd.dif>macd.dea;
+            hard["接近前 20 日高點 1% 內"]=close>=recentHigh*0.99;
+            hard["20 日相對強度優於大盤"]=relativeStrength>0;
+            hard[$"突破時量比至少 {s.BreakoutVolumeMultiple:0.##} 倍"]=
+                close<=recentHigh || (averageVolume>0 && volume>=averageVolume*s.BreakoutVolumeMultiple);
         }
         else
         {
-            int highLookback=Math.Clamp(s.PullbackHighLookbackDays,
-                Math.Max(6,s.PullbackDaysMax+1),60);
-            int peakIndex=x.Count-highLookback;
-            for (int i=peakIndex+1;i<x.Count;i++)
-                if (x[i].High>=x[peakIndex].High) peakIndex=i;
-            recentHigh=(double)x[peakIndex].High;
-            pullbackDays=x.Count-1-peakIndex;
+            recentHigh=x.TakeLast(20).Max(c=>(double)c.High);
             pullback=recentHigh>0?(recentHigh-close)/recentHigh*100:0;
-            int priorLookback=Math.Clamp(s.PriorStrengthLookbackDays,2,60);
-            int priorStart=peakIndex-priorLookback;
-            if (priorStart>=0 && x[priorStart].Close>0)
-            {
-                priorGain=(double)(x[peakIndex].Close/x[priorStart].Close-1)*100;
-                double peakMa20=x.Skip(peakIndex-19).Take(20).Average(c=>(double)c.Close);
-                priorStrength=priorGain>=s.PriorStrengthMinGainPercent &&
-                    (double)x[peakIndex].Close>peakMa20;
-            }
-            double priorResistance=x.Skip(Math.Max(0,peakIndex-priorLookback))
-                .Take(Math.Min(priorLookback,peakIndex)).DefaultIfEmpty(x[peakIndex])
-                .Max(c=>(double)c.High);
-            var supports=new[] { ma10,ma20,priorResistance }.Where(v=>v>0).ToArray();
-            support=supports.MinBy(v=>Math.Abs(close-v)/v);
-            supportDistance=Math.Abs(close-support)/support*100;
-            double advanceVol=pullbackDays>0?Ta.AvgVolume(x,20,pullbackDays)??0:0;
-            double pullbackVol=pullbackDays>0?x.Skip(peakIndex+1)
-                .Average(c=>(double)c.Volume):0;
-            pullbackVolumeRatio=advanceVol>0?pullbackVol/advanceVol:double.PositiveInfinity;
-            double peakRsi6=Ta.Rsi(x.Take(peakIndex+1).ToArray(),6)??50;
-            bool rsiCooling=rsi6<peakRsi6;
-            bool macdCooling=(macd.hist<0 && macd.hist>previousMacd.hist) ||
-                (macd.hist>=0 && macd.hist<previousMacd.hist);
-            hard["前段強勢"]=priorStrength;
-            hard[$"回檔 {s.PullbackDaysMin}～{s.PullbackDaysMax} 個交易日"]=
-                pullbackDays>=s.PullbackDaysMin && pullbackDays<=s.PullbackDaysMax;
-            hard[$"回檔 {s.PullbackMinPercent:0.#}～{s.PullbackMaxPercent:0.#}%"]=
+            hard["股價 > MA20 > MA50"]=close>ma20 && ma20>ma50;
+            hard["MA20、MA50 向上"]=ma20>Ta.Sma(x,20,5) && ma50>Ta.Sma(x,50,5);
+            hard[$"前 20 日高點回檔 {s.PullbackMinPercent:0.##}～{s.PullbackMaxPercent:0.##}%"]=
                 pullback>=s.PullbackMinPercent && pullback<=s.PullbackMaxPercent;
-            hard["MA20 未下降"]=ma20>=priorMa20;
-            hard["MA20 支撐未明顯跌破"]=close>=ma20*(1-s.SupportTolerancePercent/100);
-            hard[$"接近短線支撐 ±{s.SupportTolerancePercent:0.#}%"]=
-                supportDistance<=s.SupportTolerancePercent;
-            hard["整段回檔量縮"]=pullbackVolumeRatio<1;
-            double healthyCenter=(s.PullbackMinPercent+s.PullbackMaxPercent)/2;
-            double healthyHalf=Math.Max((s.PullbackMaxPercent-s.PullbackMinPercent)/2,0.01);
-            score=(priorStrength?ScoreWeight.PriorStrength:0)+
-                Math.Clamp(1-Math.Abs(pullback-healthyCenter)/healthyHalf,0,1)*ScoreWeight.HealthyPullback+
-                Math.Clamp(1-supportDistance/Math.Max(s.SupportTolerancePercent,0.01),0,1)*ScoreWeight.Support+
-                Math.Clamp(1-pullbackVolumeRatio,0,1)*ScoreWeight.VolumeContraction+
-                (rsi14>=s.PullbackRsi14Min && rsi14<=s.PullbackRsi14Max?ScoreWeight.RsiCooling:0)+
-                (rsiCooling?ScoreWeight.ShortRsiCooling:0)+
-                (macdCooling?ScoreWeight.MacdCooling:0)+
-                (relativeStrength>0?ScoreWeight.PullbackRelativeStrength:0)+
-                (close>ma50 && ma50>=priorMa50?ScoreWeight.LongTrend:0);
-            details=$"前段強勢 {(priorStrength?"PASS":"FAIL")}（前{priorLookback}日漲 {priorGain:F1}%）；"+
-                $"前高 {recentHigh:F2}，回檔 {pullback:F1}% / {pullbackDays} 日；"+
-                $"MA10 {ma10:F2} / MA20 {ma20:F2} / MA50 {ma50:F2} / MA100 {ma100:F2}；"+
-                $"支撐 {support:F2}（距離 {supportDistance:F1}%）；整段回檔量比 {pullbackVolumeRatio:F2}；"+
-                $"RSI14 {rsi14:F1} / 日K RSI6 {rsi6:F1}{(rsiCooling?" 降溫":"")}；"+
-                $"MACD {(macdCooling?"動能修正":"未呈修正")} DIF {macd.dif:F3} / DEA {macd.dea:F3}；"+
-                $"相對強度 {relativeStrength:+0.0;-0.0;0.0}%；分數 {score:F1}";
+            hard["成交量低於前 20 日均量"]=volume<averageVolume;
+            hard["RSI 介於 40～55"]=rsi>=40 && rsi<=55;
+            hard["MACD 負柱縮短"]=macd.hist<0 && priorMacd.hist<0 && macd.hist>priorMacd.hist;
         }
-
-        bool passed=hard.Values.All(value=>value);
-        string conditionDetails=string.Join("、",hard.Select(item=>$"{(item.Value?"✓":"✗")}{item.Key}"));
-        details=$"{conditionDetails}；{details}";
-        StockCandidate? candidate=null;
-        if (passed)
-        {
-            var kdj=Ta.Kdj(x,9)??(0,0,0);
-            double previousClose=(double)x[^2].Close;
-            candidate=new StockCandidate
-            {
-                Symbol=symbol,Name=name,Mode=mode,Close=x[^1].Close,
-                ChangePercent=previousClose==0?0:(close-previousClose)/previousClose*100,
-                Rsi14=rsi14,RelativeStrength20=relativeStrength,CandidateScore=score,
-                DailyMacdDif=macd.dif,DailyMacdDea=macd.dea,
-                DailyK=kdj.k,DailyD=kdj.d,DailyJ=kdj.j,Reason=details
-            };
-        }
+        StockCandidate? candidate=Scan(symbol,name,x,market,mode,s);
+        string details=string.Join("、",hard.Select(item=>$"{(item.Value?"✓":"✗")}{item.Key}"));
         return new StockScanDebug
         {
             Symbol=symbol,Mode=mode,Date=x[^1].Time,Close=close,
             Ma10=ma10,Ma20=ma20,Ma50=ma50,Ma100=ma100,
-            Rsi14=rsi14,DailyRsi6=rsi6,MacdDif=macd.dif,MacdDea=macd.dea,
-            Volume=volume,AverageVolume20=avgVol,VolumeRatio=volumeRatio,
+            Rsi14=rsi,DailyRsi6=Ta.Rsi(x,6)??50,
+            MacdDif=macd.dif,MacdDea=macd.dea,
+            Volume=volume,AverageVolume20=averageVolume,
+            VolumeRatio=averageVolume>0?volume/averageVolume:0,
             RecentHigh=recentHigh,DistanceToBreakoutPercent=breakoutDistance,
             RelativeStrength20=relativeStrength,PullbackPercent=pullback,
-            PullbackDays=pullbackDays,PriorStrength=priorStrength,
-            PriorStrengthGainPercent=priorGain,Support=support,
-            SupportDistancePercent=supportDistance,PullbackVolumeRatio=pullbackVolumeRatio,
-            HardConditions=hard,Score=score,Details=details,Candidate=candidate
+            HardConditions=hard,Details=details,Candidate=candidate
         };
     }
 

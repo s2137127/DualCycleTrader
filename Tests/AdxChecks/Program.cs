@@ -1,4 +1,4 @@
-using DualCycleTrader.Indicators;
+﻿using DualCycleTrader.Indicators;
 using DualCycleTrader.Models;
 using DualCycleTrader.Strategy;
 using DualCycleTrader.Data;
@@ -114,75 +114,48 @@ static List<Candle> DailySeries(IEnumerable<decimal> prices, decimal lastVolume 
         index == values.Length - 1 ? lastVolume : 1000)).ToList();
 }
 
-var aPrices = Enumerable.Range(0, 100).Select(i => 130m - i * 0.3m)
-    .Concat(Enumerable.Repeat(100m, 27))
-    .Concat(Enumerable.Range(1, 10).Select(i => 100m + i))
-    .Append(111m).ToArray();
-var aDaily = DailySeries(aPrices);
+var aPrices = Enumerable.Range(0, 130).Select(i => 100m + i * 0.2m).ToArray();
+aPrices[^1] += 0.5m;
+var aDaily = DailySeries(aPrices, 2000);
 var aMarket = DailySeries(Enumerable.Repeat(100m, aDaily.Count));
-var a1 = StockScanner.DebugScan("A.TW", "A", aDaily, aMarket, MarketMode.A_BullTrend, settings);
-Check(Ta.Sma(aDaily,100) < Ta.Sma(aDaily,100,1) && a1.Passed,
-    "A1: falling MA100 cannot exclude short breakout");
-var a2Daily = DailySeries(aPrices, 1300);
-var a2 = StockScanner.DebugScan("A.TW", "A", a2Daily, aMarket, MarketMode.A_BullTrend, settings);
-Check(a2.Passed && Math.Abs(a2.VolumeRatio - 1.3) < 0.01,
-    "A2: breakout with 1.3x volume qualifies");
-var strongMarket = DailySeries(Enumerable.Repeat(100m, aDaily.Count - 20)
-    .Concat(Enumerable.Range(1, 20).Select(i => 100m + i)));
-var aWeakRs = StockScanner.DebugScan("A.TW", "A", aDaily, strongMarket,
+var aScan = StockScanner.Scan("A.TW", "A", aDaily, aMarket,
     MarketMode.A_BullTrend, settings);
-Check(!aWeakRs.Passed && aWeakRs.HardConditions.Any(c =>
-    c.Key.Contains("相對大盤強度") && !c.Value),
-    "A: weak relative strength is filtered");
-var aExtendedDaily = aDaily.ToArray();
-aExtendedDaily[^1] = aExtendedDaily[^1] with
-    { Close = 120m, High = 120.2m, Low = 119.8m };
-var aExtended = StockScanner.DebugScan("A.TW", "A", aExtendedDaily, aMarket,
+var aDebug = StockScanner.DebugScan("A.TW", "A", aDaily, aMarket,
     MarketMode.A_BullTrend, settings);
-Check(!aExtended.Passed && aExtended.HardConditions.Any(c =>
-    c.Key.Contains("MA10 不超過") && !c.Value),
-    "A: price far above MA10 is filtered");
-var a3Prices = aPrices.ToArray();
-a3Prices[^1] = 104m;
-var a3 = StockScanner.DebugScan("A.TW", "A", DailySeries(a3Prices), aMarket,
-    MarketMode.A_BullTrend, settings);
-Check(!a3.Passed && a3.HardConditions.Any(c => c.Key.Contains("高點") && !c.Value),
-    "A3: no recent high proximity excludes stock");
+Check(aScan is not null && aDebug.Passed &&
+    aDebug.HardConditions["股價 > MA20 > MA50 > MA100"],
+    "A: original full moving-average trend qualifies");
+var aLowVolume = DailySeries(aPrices, 1000);
+Check(StockScanner.Scan("A.TW", "A", aLowVolume, aMarket,
+    MarketMode.A_BullTrend, settings) is null,
+    "A: true breakout still requires original volume multiple");
+Check(!StockScanner.DebugScan("A.TW", "A", aLowVolume, aMarket,
+    MarketMode.A_BullTrend, settings).Passed,
+    "A: debug matches scanner for low-volume breakout");
 
-var bPrices = Enumerable.Range(0, 117).Select(i => 130m - i * (30m / 116))
-    .Concat(Enumerable.Range(1, 10).Select(i => 100m + i))
-    .Concat(new[] { 108m, 106m, 103.4m }).ToArray();
+var bPrices = Enumerable.Range(0, 100).Select(i => 150m - i * 0.5m)
+    .Concat(Enumerable.Range(0, 30).Select(i => 100m + i * 0.7m)).ToArray();
 var bDaily = DailySeries(bPrices);
-for (int index = bDaily.Count - 3; index < bDaily.Count; index++)
-    bDaily[index] = bDaily[index] with { Volume = 600 };
 var bMarket = DailySeries(Enumerable.Repeat(100m, bDaily.Count));
-var b1 = StockScanner.DebugScan("B.TW", "B", bDaily, bMarket, MarketMode.B_BullRange, settings);
-Check(b1.Passed && b1.Close < b1.Ma10 && b1.PullbackDays == 3 && b1.PriorStrength,
-    "B1: strong 3-day pullback below MA10 qualifies");
-var b2 = StockScanner.DebugScan("B.TW", "B",
-    DailySeries(Enumerable.Repeat(100m, 127).Concat(new[] { 98m, 95m, 92m })),
-    bMarket, MarketMode.B_BullRange, settings);
-Check(!b2.Passed && !b2.PriorStrength, "B2: weak prior trend excludes pullback");
-var b3Daily = bDaily.ToArray();
-b3Daily[^1] = b3Daily[^1] with { Close = 93.5m, Low = 93.3m, High = 93.7m };
-var b3 = StockScanner.DebugScan("B.TW", "B", b3Daily, bMarket,
+var bDebug = StockScanner.DebugScan("B.TW", "B", bDaily, bMarket,
     MarketMode.B_BullRange, settings);
-Check(!b3.Passed && b3.PullbackPercent > settings.PullbackMaxPercent,
-    "B3: 15 percent pullback exceeds healthy range");
-Check(Ta.Sma(bDaily,100) < Ta.Sma(bDaily,100,1) && b1.Passed,
-    "B4: falling MA100 cannot exclude healthy pullback");
-var flatHourly = DailySeries(Enumerable.Repeat(100m, 80));
-var b5Entry = StockScanner.CheckEntry60m(flatHourly, MarketMode.B_BullRange, settings);
-Check(b1.Candidate is not null && !b5Entry.IsMatch &&
-    b5Entry.UnmetConditions.Any(c => c.Contains("MACD")),
-    "B5: daily candidate remains while hourly MACD waits");
+Check(bDebug.HardConditions["股價 > MA20 > MA50"] &&
+    bDebug.Ma50 < bDebug.Ma100,
+    "B: new MA20/MA50 order can pass while old MA50/MA100 order fails");
+Check(bDebug.Passed == (StockScanner.Scan("B.TW", "B", bDaily, bMarket,
+    MarketMode.B_BullRange, settings) is not null),
+    "B: debug matches scanner");
+Check(bDebug.HardConditions.ContainsKey("MACD 負柱縮短") &&
+    bDebug.HardConditions.ContainsKey("RSI 介於 40～55") &&
+    bDebug.HardConditions.ContainsKey("成交量低於前 20 日均量"),
+    "B: original pullback filters are restored");
 var oldDefaults = JsonSerializer.Deserialize<StrategySettings>(
-    "{\"PullbackMinPercent\":5,\"PullbackMaxPercent\":12,\"BreakoutVolumeMultiple\":1.3}")!;
+    "{\"PullbackMinPercent\":3,\"PullbackMaxPercent\":10,\"ABScannerVersion\":2,\"BreakoutVolumeMultiple\":1.3}")!;
 oldDefaults.MigrateLegacyScannerDefaults();
-Check(oldDefaults.PullbackMinPercent == 3 && oldDefaults.PullbackMaxPercent == 10 &&
+Check(oldDefaults.PullbackMinPercent == 5 && oldDefaults.PullbackMaxPercent == 12 &&
     oldDefaults.BreakoutStrongVolumeRatio == 1.3,
-    "legacy A/B settings migrate without losing custom volume ratio");
-Console.WriteLine("Short-cycle A/B scanner checks passed");
+    "short-cycle defaults migrate back without losing custom volume ratio");
+Console.WriteLine("Original A/B scanner checks passed");
 
 var historicalMarket = Candles(180);
 var historicalDate = historicalMarket[159].Time.Date;

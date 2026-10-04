@@ -638,8 +638,8 @@ public class HomeBase : ComponentBase
         $"K {k:F1} / D {d:F1} / J {j:F1}";
     private static double Rank(StockCandidate candidate, MarketMode mode) => mode switch
     {
-        MarketMode.A_BullTrend => candidate.CandidateScore,
-        MarketMode.B_BullRange => candidate.CandidateScore,
+        MarketMode.A_BullTrend => candidate.RelativeStrength20,
+        MarketMode.B_BullRange => candidate.RelativeStrength20,
         MarketMode.C_BearRange => candidate.RelativeStrength20 + candidate.Rsi14 / 20,
         _ => candidate.RelativeStrength20
     };
