@@ -4,6 +4,7 @@ namespace Web.Services;
 
 public interface IHistoricalDataStore
 {
+    void ClearCache();
     Task<List<Candle>> GetAsync(string symbol,string timeframe,DateTime from,DateTime to);
     Task<List<List<Candle>>> GetManyAsync(IReadOnlyList<string> symbols,string timeframe,DateTime from,DateTime to);
     Task<DateTime?> GetLatestDateAsync(string symbol,string timeframe);

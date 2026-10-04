@@ -198,7 +198,9 @@ window.stockApp = {
         if (savedRevision(uid) !== revision) {
             await clearCache();
             saveRevision(uid, revision);
+            return true;
         }
+        return false;
     },
     async publishRevision() {
         if (!dataChanged) return;

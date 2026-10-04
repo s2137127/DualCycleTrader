@@ -46,7 +46,11 @@
             <label>策略<select @bind="GuideMode"><option value="A">A 突破</option><option value="B">B 回檔</option><option value="C">C 抗跌</option><option value="D">D 空手</option><option value="E">E 觀察</option></select></label>
             <pre class="guide">@GuideDescription</pre><pre class="guide">@ExitRules</pre>
         </details></section>
-        @if (ShowingHistory)
+        @if (Analyzing)
+        {
+        <section class="card"><p>正在分析，完成後顯示結果表格。</p></section>
+        }
+        else if (ShowingHistory)
         {
         <section class="card"><h2>觸發紀錄（@SignalRows.Count）</h2>
             <div class="table-wrap"><table><thead><tr><th>觸發時間</th><th>價格</th><th>市場</th><th>代號</th><th>名稱</th><th>策略</th><th>日 K 判定日</th><th>交易模式</th><th>日 K 原因</th></tr></thead>

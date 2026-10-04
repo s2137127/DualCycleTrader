@@ -34,6 +34,7 @@ public class HomeBase : ComponentBase
     protected List<ResultRow> Rows = new();
     protected List<HistoricalSignal> SignalRows = new();
     protected bool ShowingHistory;
+    protected bool Analyzing;
     protected int HistoryMonths = 6;
     protected int Progress, ProgressMax = 1;
     protected bool Configured;
@@ -61,7 +62,7 @@ public class HomeBase : ComponentBase
             var config = await Http.GetFromJsonAsync<Config>("firebase-config.json", jsonOptions);
             if (config is null || string.IsNullOrWhiteSpace(config.ProjectId) ||
                 string.IsNullOrWhiteSpace(config.MarketApiBaseUrl)) return;
-            await JS.InvokeVoidAsync("import", "./js/stock-app.js?v=20261004-2");
+            await JS.InvokeVoidAsync("import", "./js/stock-app.js?v=20261004-3");
             await JS.InvokeVoidAsync("stockApp.initialize", new
             {
                 apiKey = config.ApiKey, authDomain = config.AuthDomain,
@@ -112,6 +113,10 @@ public class HomeBase : ComponentBase
     protected void Cancel() => cancellation?.Cancel();
     private void Begin() { cancellation = new(); Progress = 0; Error = null; }
     private void End() { cancellation?.Dispose(); cancellation = null; StateHasChanged(); }
+    private async Task SyncDataRevision()
+    {
+        if (await JS.InvokeAsync<bool>("stockApp.syncRevision")) Store.ClearCache();
+    }
     private static DateTime TaiwanToday() => DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(8)).Date;
 
     private async Task<List<Candle>> EnsureCandles(string symbol, string timeframe,
@@ -141,7 +146,7 @@ public class HomeBase : ComponentBase
         try
         {
             var token = cancellation!.Token;
-            await JS.InvokeVoidAsync("stockApp.syncRevision");
+            await SyncDataRevision();
             Status = "取得加權指數與股票清單..."; StateHasChanged();
             var market = await EnsureCandles("^TWII", "D", 500, token);
             if (market.Count < 130) throw new InvalidOperationException("加權指數日 K 不足 130 根。");
@@ -210,15 +215,19 @@ public class HomeBase : ComponentBase
     protected async Task Analyze(DateTime? date)
     {
         Begin();
+        Analyzing = true;
         var timer = Stopwatch.StartNew();
+        TimeSpan dailyReadTime = TimeSpan.Zero, hourlyReadTime = TimeSpan.Zero;
         try
         {
             ShowingHistory = false;
             var token = cancellation!.Token;
             if (Universe.Count == 0) { Status = "請先更新資料。"; return; }
-            await JS.InvokeVoidAsync("stockApp.syncRevision");
+            await SyncDataRevision();
             DateTime today = TaiwanToday();
+            var readStarted = timer.Elapsed;
             var allMarket = await Store.GetAsync("^TWII", "D", today.AddDays(-550), today.AddDays(1));
+            dailyReadTime += timer.Elapsed - readStarted;
             var market = date is null ? allMarket : HistoricalCandles.DailyAtClose(allMarket, date.Value);
             if (market.Count < 130) { Status = "大盤日 K 不足，請先更新資料。"; return; }
             if (date is not null && !HistoricalCandles.HasCandleOn(market, date.Value))
@@ -250,8 +259,10 @@ public class HomeBase : ComponentBase
             {
                 token.ThrowIfCancellationRequested();
                 var batch = Universe.Skip(start).Take(readBatchSize).ToArray();
+                readStarted = timer.Elapsed;
                 var dailyBars = await Store.GetManyAsync(batch.Select(stock => stock.Symbol).ToArray(),
                     "D", today.AddDays(-550), today.AddDays(1));
+                dailyReadTime += timer.Elapsed - readStarted;
                 for (int index = 0; index < batch.Length; index++)
                 {
                     token.ThrowIfCancellationRequested();
@@ -262,7 +273,9 @@ public class HomeBase : ComponentBase
                         foreach (var candidate in ScannerCoordinator.Scan(stock.Symbol, stock.Name,
                             daily, market, modes, Settings))
                         {
+                            readStarted = timer.Elapsed;
                             var hourly = await Store.GetAsync(stock.Symbol, "60", today.AddDays(-200), today.AddDays(1));
+                            hourlyReadTime += timer.Elapsed - readStarted;
                             if (date is not null) hourly = HistoricalCandles.HourlyAtClose(hourly, date.Value);
                             var checks = ScannerCoordinator.CheckEntries(hourly, candidate, Settings);
                             var entry = checks.Values.FirstOrDefault(c => c.IsMatch) ?? checks.Values.First();
@@ -283,16 +296,16 @@ public class HomeBase : ComponentBase
                                 FormatKdj(entry.K, entry.D, entry.J)));
                         }
                     Progress++; Status = $"分析 {Progress}/{Universe.Count}：{stock.Name}";
-                    if (Progress % 10 == 0) StateHasChanged();
+                    if (Progress % 100 == 0) StateHasChanged();
                 }
             }
             Rows = results.OrderByDescending(r => r.Rank).ToList();
             await JS.InvokeVoidAsync("stockApp.putJson", "latest-results", JsonSerializer.Serialize(Rows));
-            Status = $"分析完成：{Rows.Count} 筆候選結果；耗時 {timer.Elapsed.TotalSeconds:F1} 秒。";
+            Status = $"分析完成：{Rows.Count} 筆候選結果；耗時 {timer.Elapsed.TotalSeconds:F1} 秒（日 K 載入 {dailyReadTime.TotalSeconds:F1} 秒、60 分 K 載入 {hourlyReadTime.TotalSeconds:F1} 秒）。";
         }
         catch (OperationCanceledException) { Status = "已停止分析。"; }
         catch (Exception ex) { Error = ex.Message; Status = "分析失敗。"; }
-        finally { End(); }
+        finally { Analyzing = false; End(); }
     }
 
     private string SignalFingerprint => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
@@ -324,7 +337,7 @@ public class HomeBase : ComponentBase
         {
             if (Universe.Count == 0) { Status = "請先更新資料。"; return; }
             var token = cancellation!.Token;
-            await JS.InvokeVoidAsync("stockApp.syncRevision");
+            await SyncDataRevision();
             DateTime today = TaiwanToday();
             DateTime earliest = HistoryMonths == 0 ? today.AddDays(-7) : today.AddMonths(-HistoryMonths);
             var market = await Store.GetAsync("^TWII", "D", today.AddDays(-550), today.AddDays(1));
