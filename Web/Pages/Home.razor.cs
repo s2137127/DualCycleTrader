@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Security.Cryptography;
 using System.Text;
+using System.Diagnostics;
 using DualCycleTrader;
 using System.Net.Http.Json;
 using DualCycleTrader.Data;
@@ -60,7 +61,7 @@ public class HomeBase : ComponentBase
             var config = await Http.GetFromJsonAsync<Config>("firebase-config.json", jsonOptions);
             if (config is null || string.IsNullOrWhiteSpace(config.ProjectId) ||
                 string.IsNullOrWhiteSpace(config.MarketApiBaseUrl)) return;
-            await JS.InvokeVoidAsync("import", "./js/stock-app.js?v=20261003-1");
+            await JS.InvokeVoidAsync("import", "./js/stock-app.js?v=20261004-1");
             Email = await JS.InvokeAsync<string?>("stockApp.initialize", new
             {
                 apiKey = config.ApiKey, authDomain = config.AuthDomain,
@@ -153,9 +154,11 @@ public class HomeBase : ComponentBase
     protected async Task UpdateData()
     {
         Begin();
+        var timer = Stopwatch.StartNew();
         try
         {
             var token = cancellation!.Token;
+            await JS.InvokeVoidAsync("stockApp.syncRevision");
             Status = "取得加權指數與股票清單..."; StateHasChanged();
             var market = await EnsureCandles("^TWII", "D", 500, token);
             if (market.Count < 130) throw new InvalidOperationException("加權指數日 K 不足 130 根。");
@@ -163,45 +166,65 @@ public class HomeBase : ComponentBase
             await JS.InvokeVoidAsync("stockApp.putJson", "universe", JsonSerializer.Serialize(Universe));
             ProgressMax = Universe.Count;
             var candidates = new List<StockInfo>();
-            foreach (var stock in Universe)
+            const int updateBatchSize = 6;
+            for (int start = 0; start < Universe.Count; start += updateBatchSize)
             {
                 token.ThrowIfCancellationRequested();
-                try
+                var batch = Universe.Skip(start).Take(updateBatchSize).ToArray();
+                var dailyBars = await Task.WhenAll(batch.Select(async stock =>
                 {
-                    var daily = await EnsureCandles(stock.Symbol, "D", 500, token, market[^1].Time.Date);
-                    foreach (var mode in new[] { MarketMode.A_BullTrend, MarketMode.B_BullRange,
-                        MarketMode.C_BearRange, MarketMode.E_Transition })
-                        if (StockScanner.Scan(stock.Symbol, stock.Name, daily, market, mode, Settings) is not null)
-                        { candidates.Add(stock); break; }
+                    try { return await EnsureCandles(stock.Symbol, "D", 500, token, market[^1].Time.Date); }
+                    catch (OperationCanceledException) { throw; }
+                    catch { return null; }
+                }));
+                for (int index = 0; index < batch.Length; index++)
+                {
+                    var stock = batch[index];
+                    var daily = dailyBars[index];
+                    if (daily is not null)
+                        foreach (var mode in new[] { MarketMode.A_BullTrend, MarketMode.B_BullRange,
+                            MarketMode.C_BearRange, MarketMode.E_Transition })
+                            if (StockScanner.Scan(stock.Symbol, stock.Name, daily, market, mode, Settings) is not null)
+                            { candidates.Add(stock); break; }
+                    Progress++; Status = $"更新日 K {Progress}/{Universe.Count}：{stock.Name}";
+                    if (Progress % 10 == 0) StateHasChanged();
                 }
-                catch (OperationCanceledException) { throw; }
-                catch { /* Continue with other symbols, matching the desktop flow. */ }
-                Progress++; Status = $"更新日 K {Progress}/{Universe.Count}：{stock.Name}";
-                if (Progress % 10 == 0) StateHasChanged();
             }
-            foreach (var stock in candidates)
+            for (int start = 0; start < candidates.Count; start += updateBatchSize)
             {
                 token.ThrowIfCancellationRequested();
-                Status = $"更新 60 分 K：{stock.Name}"; StateHasChanged();
-                try { await EnsureCandles(stock.Symbol, "60", 60, token, market[^1].Time.Date); }
-                catch (OperationCanceledException) { throw; }
-                catch { }
+                var batch = candidates.Skip(start).Take(updateBatchSize).ToArray();
+                Status = $"更新 60 分 K {Math.Min(start + batch.Length, candidates.Count)}/{candidates.Count}";
+                StateHasChanged();
+                await Task.WhenAll(batch.Select(async stock =>
+                {
+                    try { await EnsureCandles(stock.Symbol, "60", 60, token, market[^1].Time.Date); }
+                    catch (OperationCanceledException) { throw; }
+                    catch { }
+                }));
             }
-            Status = $"資料更新完成：{Universe.Count} 檔，候選 {candidates.Count} 檔。請按重新分析。";
+            Status = $"資料更新完成：{Universe.Count} 檔，候選 {candidates.Count} 檔；耗時 {timer.Elapsed.TotalSeconds:F1} 秒。請按重新分析。";
         }
         catch (OperationCanceledException) { Status = "已停止更新。"; }
         catch (Exception ex) { Error = ex.Message; Status = "更新失敗。"; }
-        finally { End(); }
+        finally
+        {
+            try { await JS.InvokeVoidAsync("stockApp.publishRevision"); }
+            catch (Exception ex) { Error ??= ex.Message; }
+            End();
+        }
     }
 
     protected async Task Analyze(DateTime? date)
     {
         Begin();
+        var timer = Stopwatch.StartNew();
         try
         {
             ShowingHistory = false;
             var token = cancellation!.Token;
             if (Universe.Count == 0) { Status = "請先更新資料。"; return; }
+            await JS.InvokeVoidAsync("stockApp.syncRevision");
             DateTime today = TaiwanToday();
             var allMarket = await Store.GetAsync("^TWII", "D", today.AddDays(-550), today.AddDays(1));
             var market = date is null ? allMarket : HistoricalCandles.DailyAtClose(allMarket, date.Value);
@@ -221,15 +244,22 @@ public class HomeBase : ComponentBase
             var modes = ScannerCoordinator.ActiveScanners(state.ConfirmedTradingMode, Settings, selected);
             MarketText = $"{(date is null ? "目前" : date.Value.ToString("yyyy/MM/dd"))}市場：{snapshot.Mode}　交易模式：{state.ConfirmedTradingMode}";
             MarketDetail = $"MA20 {(snapshot.Ma20Up ? "↑" : "↓")}　MA50 {(snapshot.Ma50Up ? "↑" : "↓")}　MA100 {(snapshot.Ma100Up ? "↑" : "↓")}　ADX {snapshot.Adx:F1}　RSI {snapshot.Rsi:F1}";
+            if (modes.Count == 0)
+            {
+                Rows.Clear();
+                await JS.InvokeVoidAsync("stockApp.putJson", "latest-results", "[]");
+                Status = "目前交易模式未啟動選股策略，分析完成。";
+                return;
+            }
             var results = new List<ResultRow>();
             ProgressMax = Universe.Count; Progress = 0;
-            const int readBatchSize = 8;
+            const int readBatchSize = 24;
             for (int start = 0; start < Universe.Count; start += readBatchSize)
             {
                 token.ThrowIfCancellationRequested();
                 var batch = Universe.Skip(start).Take(readBatchSize).ToArray();
-                var dailyBars = await Task.WhenAll(batch.Select(stock =>
-                    Store.GetAsync(stock.Symbol, "D", today.AddDays(-550), today.AddDays(1))));
+                var dailyBars = await Store.GetManyAsync(batch.Select(stock => stock.Symbol).ToArray(),
+                    "D", today.AddDays(-550), today.AddDays(1));
                 for (int index = 0; index < batch.Length; index++)
                 {
                     token.ThrowIfCancellationRequested();
@@ -266,7 +296,7 @@ public class HomeBase : ComponentBase
             }
             Rows = results.OrderByDescending(r => r.Rank).ToList();
             await JS.InvokeVoidAsync("stockApp.putJson", "latest-results", JsonSerializer.Serialize(Rows));
-            Status = $"分析完成：{Rows.Count} 筆候選結果。";
+            Status = $"分析完成：{Rows.Count} 筆候選結果；耗時 {timer.Elapsed.TotalSeconds:F1} 秒。";
         }
         catch (OperationCanceledException) { Status = "已停止分析。"; }
         catch (Exception ex) { Error = ex.Message; Status = "分析失敗。"; }
@@ -297,10 +327,12 @@ public class HomeBase : ComponentBase
     protected async Task ShowSignalHistory()
     {
         Begin();
+        var timer = Stopwatch.StartNew();
         try
         {
             if (Universe.Count == 0) { Status = "請先更新資料。"; return; }
             var token = cancellation!.Token;
+            await JS.InvokeVoidAsync("stockApp.syncRevision");
             DateTime today = TaiwanToday();
             DateTime earliest = HistoryMonths == 0 ? today.AddDays(-7) : today.AddMonths(-HistoryMonths);
             var market = await Store.GetAsync("^TWII", "D", today.AddDays(-550), today.AddDays(1));
@@ -319,13 +351,18 @@ public class HomeBase : ComponentBase
             {
                 var daily = new Dictionary<string, List<Candle>>();
                 ProgressMax = Universe.Count; Progress = 0;
-                foreach (var stock in Universe)
+                const int historyReadBatchSize = 24;
+                for (int start = 0; start < Universe.Count; start += historyReadBatchSize)
                 {
                     token.ThrowIfCancellationRequested();
-                    daily[stock.Symbol] = await Store.GetAsync(stock.Symbol, "D",
-                        earliest.AddDays(-250), today.AddDays(1));
-                    Progress++; Status = $"讀取歷史日 K {Progress}/{Universe.Count}";
-                    if (Progress % 10 == 0) StateHasChanged();
+                    var batch = Universe.Skip(start).Take(historyReadBatchSize).ToArray();
+                    var bars = await Store.GetManyAsync(batch.Select(stock => stock.Symbol).ToArray(),
+                        "D", earliest.AddDays(-250), today.AddDays(1));
+                    for (int index = 0; index < batch.Length; index++)
+                        daily[batch[index].Symbol] = bars[index];
+                    Progress += batch.Length;
+                    Status = $"讀取歷史日 K {Progress}/{Universe.Count}";
+                    StateHasChanged();
                 }
                 var byDate = HistoricalSignalScanner.FindDailyCandidatesByDate(market, Universe,
                     symbol => daily.GetValueOrDefault(symbol) ?? new(), Settings, missing.Min(), today,
@@ -333,24 +370,32 @@ public class HomeBase : ComponentBase
                 var candidates = byDate.Values.SelectMany(s => s).DistinctBy(s => s.Symbol).ToArray();
                 var hourly = new Dictionary<string, List<Candle>>();
                 ProgressMax = candidates.Length; Progress = 0;
-                foreach (var stock in candidates)
+                const int historyHourlyBatchSize = 6;
+                for (int start = 0; start < candidates.Length; start += historyHourlyBatchSize)
                 {
                     token.ThrowIfCancellationRequested();
-                    int days = Math.Min(730, Math.Max(60, (int)(today - missing.Min()).TotalDays + 31));
-                    var bars = await Store.GetAsync(stock.Symbol, "60", today.AddDays(-days), today.AddDays(1));
-                    if (bars.Count == 0 || bars[0].Time.Date > missing.Min().AddDays(-30))
+                    var batch = candidates.Skip(start).Take(historyHourlyBatchSize).ToArray();
+                    var barsByStock = await Task.WhenAll(batch.Select(async stock =>
                     {
-                        try
+                        int days = Math.Min(730, Math.Max(60, (int)(today - missing.Min()).TotalDays + 31));
+                        var bars = await Store.GetAsync(stock.Symbol, "60", today.AddDays(-days), today.AddDays(1));
+                        if (bars.Count == 0 || bars[0].Time.Date > missing.Min().AddDays(-30))
                         {
-                            var fresh = await marketApi!.GetAsync(stock.Symbol, "60", days);
-                            await Store.UpsertRangeAsync(stock.Symbol, "60", fresh);
-                            bars = bars.Concat(fresh).GroupBy(c => c.Time).Select(g => g.Last())
-                                .OrderBy(c => c.Time).ToList();
+                            try
+                            {
+                                var fresh = await marketApi!.GetAsync(stock.Symbol, "60", days);
+                                await Store.UpsertRangeAsync(stock.Symbol, "60", fresh);
+                                bars = bars.Concat(fresh).GroupBy(c => c.Time).Select(g => g.Last())
+                                    .OrderBy(c => c.Time).ToList();
+                            }
+                            catch { /* An incomplete date remains marked incomplete below. */ }
                         }
-                        catch { /* An incomplete date remains marked incomplete below. */ }
-                    }
-                    hourly[stock.Symbol] = bars;
-                    Progress++; Status = $"補齊歷史 60 分 K {Progress}/{candidates.Length}";
+                        return bars;
+                    }));
+                    for (int index = 0; index < batch.Length; index++)
+                        hourly[batch[index].Symbol] = barsByStock[index];
+                    Progress += batch.Length;
+                    Status = $"補齊歷史 60 分 K {Progress}/{candidates.Length}";
                     StateHasChanged();
                 }
                 var report = HistoricalSignalScanner.Scan(market, Universe,
@@ -383,11 +428,16 @@ public class HomeBase : ComponentBase
                 .Where(s => s.TriggerTime.Date >= earliest && s.TriggerTime.Date < today)
                 .OrderByDescending(s => s.TriggerTime).ToList();
             ShowingHistory = true;
-            Status = $"觸發紀錄 {SignalRows.Count} 筆；本次新增分析 {missing.Count} 個交易日。";
+            Status = $"觸發紀錄 {SignalRows.Count} 筆；本次新增分析 {missing.Count} 個交易日；耗時 {timer.Elapsed.TotalSeconds:F1} 秒。";
         }
         catch (OperationCanceledException) { Status = "已停止歷史觸發掃描。"; }
         catch (Exception ex) { Error = ex.Message; Status = "觸發紀錄讀取失敗。"; }
-        finally { End(); }
+        finally
+        {
+            try { await JS.InvokeVoidAsync("stockApp.publishRevision"); }
+            catch (Exception ex) { Error ??= ex.Message; }
+            End();
+        }
     }
 
     protected async Task ImportFiles(InputFileChangeEventArgs args)
@@ -467,6 +517,7 @@ public class HomeBase : ComponentBase
                 if (failures.Count < 10) failures.Add($"{file.Name}: {ex.Message}");
             }
         }
+        await JS.InvokeVoidAsync("stockApp.publishRevision");
         ImportErrorDetails = string.Join("\n", failures);
         Status = $"匯入完成：新增 {added}、更新 {updated}、略過 {skipped} 筆；處理觸發紀錄月份 {archives} 個；錯誤檔案 {errors}。";
     }

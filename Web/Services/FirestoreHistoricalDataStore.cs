@@ -18,6 +18,19 @@ public sealed class FirestoreHistoricalDataStore(IJSRuntime js) : IHistoricalDat
             .Where(c=>c.Time>=from && c.Time<=to).OrderBy(c=>c.Time).ToList();
     }
 
+    public async Task<List<List<Candle>>> GetManyAsync(IReadOnlyList<string> symbols,string timeframe,
+        DateTime from,DateTime to)
+    {
+        if(symbols.Count==0) return new();
+        string json=await js.InvokeAsync<string>("stockApp.getCandlesBatch",symbols,timeframe,
+            from.ToString(timeframe=="D"?"yyyy":"yyyyMM"),
+            to.ToString(timeframe=="D"?"yyyy":"yyyyMM"));
+        var result=(JsonSerializer.Deserialize<List<List<Candle>>>(json,JsonOptions) ?? new())
+            .Select(bars=>bars.Where(c=>c.Time>=from && c.Time<=to).OrderBy(c=>c.Time).ToList()).ToList();
+        if(result.Count!=symbols.Count) throw new InvalidDataException("批次行情數量與股票數量不符。");
+        return result;
+    }
+
     public async Task<DateTime?> GetLatestDateAsync(string symbol,string timeframe)
     {
         string? value=await js.InvokeAsync<string?>("stockApp.getLatest",symbol,timeframe);

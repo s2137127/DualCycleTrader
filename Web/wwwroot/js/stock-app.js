@@ -1,9 +1,149 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, connectAuthEmulator } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
-import { getFirestore, doc, getDoc, setDoc, updateDoc, FieldPath, connectFirestoreEmulator } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
+import { getFirestore, doc, getDoc, getDocFromServer, setDoc, updateDoc, FieldPath, connectFirestoreEmulator } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 
 let auth;
 let db;
+let cacheDatabase;
+let dataChanged = false;
+const candleMemory = new Map();
+const sessionRevisions = new Map();
+const memoryLimit = 96;
+
+function cacheKey(symbol, timeframe, month) {
+    return `${requireUser()}|${symbol}|${timeframe}|${month}`;
+}
+
+function revisionKey(uid) { return `dual-cycle-revision:${uid}`; }
+
+function savedRevision(uid) {
+    try { return localStorage.getItem(revisionKey(uid)); }
+    catch { return sessionRevisions.get(uid) ?? null; }
+}
+
+function saveRevision(uid, value) {
+    sessionRevisions.set(uid, value);
+    try { localStorage.setItem(revisionKey(uid), value); }
+    catch { /* The cache still works for this browser session. */ }
+}
+
+function remember(key, bars) {
+    candleMemory.delete(key);
+    candleMemory.set(key, bars);
+    if (candleMemory.size > memoryLimit) candleMemory.delete(candleMemory.keys().next().value);
+}
+
+function openCache() {
+    if (!cacheDatabase) {
+        cacheDatabase = new Promise(resolve => {
+            if (!('indexedDB' in window)) { resolve(null); return; }
+            try {
+                const request = indexedDB.open('dual-cycle-candles', 1);
+                request.onupgradeneeded = () => request.result.createObjectStore('candles');
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => resolve(null);
+                request.onblocked = () => resolve(null);
+            } catch { resolve(null); }
+        });
+    }
+    return cacheDatabase;
+}
+
+async function cachedBars(key) {
+    if (candleMemory.has(key)) {
+        const bars = candleMemory.get(key);
+        remember(key, bars);
+        return bars;
+    }
+    const database = await openCache();
+    if (!database) return undefined;
+    try {
+        return await new Promise(resolve => {
+            const request = database.transaction('candles', 'readonly').objectStore('candles').get(key);
+            request.onsuccess = () => {
+                if (request.result !== undefined) remember(key, request.result);
+                resolve(request.result);
+            };
+            request.onerror = () => resolve(undefined);
+        });
+    } catch { return undefined; }
+}
+
+async function cachedMany(keys) {
+    const values = keys.map(key => candleMemory.has(key) ? candleMemory.get(key) : undefined);
+    if (values.every(value => value !== undefined)) return values;
+    const database = await openCache();
+    if (!database) return values;
+    try {
+        return await new Promise(resolve => {
+            const transaction = database.transaction('candles', 'readonly');
+            const store = transaction.objectStore('candles');
+            keys.forEach((key, index) => {
+                if (values[index] !== undefined) return;
+                const request = store.get(key);
+                request.onsuccess = () => { values[index] = request.result; };
+            });
+            transaction.oncomplete = () => resolve(values);
+            transaction.onerror = () => resolve(values);
+            transaction.onabort = () => resolve(values);
+        });
+    } catch { return values; }
+}
+
+async function loadBars(symbol, timeframe, month, cached) {
+    if (cached !== undefined) return cached;
+    const snapshot = await getDoc(candleRef(symbol, timeframe, month));
+    const bars = snapshot.exists() ? Object.values(snapshot.data().bars ?? {}) : [];
+    await storeBars(cacheKey(symbol, timeframe, month), bars);
+    return bars;
+}
+
+async function storeBars(key, bars) {
+    remember(key, bars);
+    const database = await openCache();
+    if (!database) return;
+    try {
+        await new Promise(resolve => {
+            const transaction = database.transaction('candles', 'readwrite');
+            transaction.objectStore('candles').put(bars, key);
+            transaction.oncomplete = resolve;
+            transaction.onerror = resolve;
+            transaction.onabort = resolve;
+        });
+    } catch { /* Browser storage is optional. */ }
+}
+
+async function storeMany(entries) {
+    if (!entries.length) return;
+    for (const [key, bars] of entries) remember(key, bars);
+    const database = await openCache();
+    if (!database) return;
+    try {
+        await new Promise(resolve => {
+            const transaction = database.transaction('candles', 'readwrite');
+            const store = transaction.objectStore('candles');
+            for (const [key, bars] of entries) store.put(bars, key);
+            transaction.oncomplete = resolve;
+            transaction.onerror = resolve;
+            transaction.onabort = resolve;
+        });
+    } catch { /* Browser storage is optional. */ }
+}
+
+async function clearCache() {
+    candleMemory.clear();
+    const database = await openCache();
+    if (!database) return;
+    try {
+        await new Promise(resolve => {
+            const transaction = database.transaction('candles', 'readwrite');
+            transaction.objectStore('candles').clear();
+            transaction.oncomplete = resolve;
+            transaction.onerror = resolve;
+            transaction.onabort = resolve;
+        });
+    } catch { /* Browser storage is optional. */ }
+}
 
 function requireUser() {
     if (!auth?.currentUser) throw new Error('請先登入 Firebase。');
@@ -60,15 +200,60 @@ window.stockApp = {
         const result = await signInWithEmailAndPassword(auth, email, password);
         return result.user.email;
     },
-    async signOut() { await signOut(auth); },
-    async getCandles(symbol, timeframe, fromMonth, toMonth) {
-        const all = [];
-        const snapshots = await Promise.all(monthsBetween(fromMonth, toMonth)
-            .map(month => getDoc(candleRef(symbol, timeframe, month))));
-        for (const snapshot of snapshots) {
-            if (snapshot.exists()) all.push(...Object.values(snapshot.data().bars ?? {}));
+    async signOut() {
+        const uid = auth.currentUser?.uid;
+        await signOut(auth);
+        await clearCache();
+        dataChanged = false;
+        if (uid) {
+            sessionRevisions.delete(uid);
+            try { localStorage.removeItem(revisionKey(uid)); }
+            catch { /* Browser storage may be unavailable. */ }
         }
+    },
+    async syncRevision() {
+        const uid = requireUser();
+        const snapshot = await getDocFromServer(doc(db, 'users', uid, 'state', 'data-revision'));
+        const revision = snapshot.exists() ? snapshot.data().value : '';
+        if (savedRevision(uid) !== revision) {
+            await clearCache();
+            saveRevision(uid, revision);
+        }
+    },
+    async publishRevision() {
+        if (!dataChanged) return;
+        const uid = requireUser();
+        const revision = `${Date.now()}-${Math.random()}`;
+        await setDoc(doc(db, 'users', uid, 'state', 'data-revision'), { value: revision });
+        saveRevision(uid, revision);
+        dataChanged = false;
+    },
+    async getCandles(symbol, timeframe, fromMonth, toMonth) {
+        const periods = monthsBetween(fromMonth, toMonth);
+        const groups = await Promise.all(periods.map(async month => {
+            const key = cacheKey(symbol, timeframe, month);
+            return loadBars(symbol, timeframe, month, await cachedBars(key));
+        }));
+        const all = groups.flat();
         return JSON.stringify(all.sort((a, b) => a.Time.localeCompare(b.Time)));
+    },
+    async getCandlesBatch(symbols, timeframe, fromMonth, toMonth) {
+        const periods = monthsBetween(fromMonth, toMonth);
+        const entries = symbols.flatMap(symbol => periods.map(month => ({ symbol, month })));
+        const cached = await cachedMany(entries.map(({ symbol, month }) => cacheKey(symbol, timeframe, month)));
+        const groups = await Promise.all(entries.map(async ({ symbol, month }, index) => {
+            if (cached[index] !== undefined) return cached[index];
+            const snapshot = await getDoc(candleRef(symbol, timeframe, month));
+            return snapshot.exists() ? Object.values(snapshot.data().bars ?? {}) : [];
+        }));
+        await storeMany(entries.flatMap(({ symbol, month }, index) => cached[index] === undefined
+            ? [[cacheKey(symbol, timeframe, month), groups[index]]] : []));
+        const result = [];
+        for (let index = 0; index < symbols.length; index++) {
+            const bars = groups.slice(index * periods.length, (index + 1) * periods.length).flat();
+            result.push(bars.sort((a, b) => a.Time.localeCompare(b.Time)));
+        }
+        return JSON.stringify(result);
     },
     async getLatest(symbol, timeframe) {
         const now = new Date();
@@ -87,7 +272,7 @@ window.stockApp = {
     async upsertCandles(symbol, timeframe, json, preserveExisting) {
         const groups = new Map();
         for (const candle of JSON.parse(json)) {
-    const month = candleKey(candle).slice(0, timeframe === 'D' ? 4 : 6);
+            const month = candleKey(candle).slice(0, timeframe === 'D' ? 4 : 6);
             if (!groups.has(month)) groups.set(month, new Map());
             groups.get(month).set(candleKey(candle), candle);
         }
@@ -112,6 +297,8 @@ window.stockApp = {
                     }
                     await updateDoc(ref, ...args);
                 }
+                await storeBars(cacheKey(symbol, timeframe, month), Object.values({ ...existing, ...changed }));
+                dataChanged = true;
             }
         }
         return counts;
