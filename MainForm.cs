@@ -400,8 +400,7 @@ public sealed class MainForm : Form
             var found=scan.result;
             _progress.Value=_progress.Maximum;
 
-            var candidates=found.OrderByDescending(x=>Rank(x.C,x.C.Mode))
-                .Take(Math.Max(1,_settings.TopCandidates)).ToList();
+            var candidates=found.OrderByDescending(x=>Rank(x.C,x.C.Mode)).ToList();
             var analyzed=await Task.Run(()=>
             {
                 var result=new List<object>();

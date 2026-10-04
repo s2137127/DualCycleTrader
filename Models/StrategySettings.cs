@@ -40,7 +40,6 @@ public sealed class StrategySettings
     public double PullbackRsi14Max { get; set; } = 60.0;
     public double SupportTolerancePercent { get; set; } = 2.0;
     public int ABScannerVersion { get; set; } = 0;
-    public int TopCandidates { get; set; } = 10;
 
     public void MigrateLegacyScannerDefaults()
     {
