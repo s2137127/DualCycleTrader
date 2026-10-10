@@ -6,6 +6,10 @@ import collect_daily as collector
 
 
 class CollectorTests(unittest.TestCase):
+    def test_market_index_uses_browser_document_id(self):
+        url = collector.document_url("https://firestore.example/documents", "^TWII", 2026)
+        self.assertTrue(url.endswith("/%255ETWII_D_2026"))
+
     def test_patch_preserves_other_years_and_existing_bars(self):
         old = {"Time": "2026-10-08T13:30:00", "Open": 10, "High": 11,
                "Low": 9, "Close": 10, "Volume": 100}

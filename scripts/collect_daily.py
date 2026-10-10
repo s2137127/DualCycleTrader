@@ -101,8 +101,10 @@ def same_candle(old, new):
 
 
 def document_url(root, symbol, year):
+    # The browser stores encodeURIComponent(symbol) inside the document ID.
+    # REST paths need a second encoding for the literal percent sign in ^TWII.
     name = f"{urllib.parse.quote(symbol, safe='')}_D_{year}"
-    return f"{root}/users/{UID}/candles/{name}"
+    return f"{root}/users/{UID}/candles/{urllib.parse.quote(name, safe='')}"
 
 
 def update_symbol(root, worker, symbol, target_date, year, dry_run):
