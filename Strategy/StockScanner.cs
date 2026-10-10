@@ -10,7 +10,11 @@ public static class StockScanner
     {
         if(x.Count<130 || market.Count<30 || mode==MarketMode.D_BearTrend) return null;
         if (mode is MarketMode.A_BullTrend or MarketMode.B_BullRange)
+        {
+            int needed=mode==MarketMode.A_BullTrend ? s.BullishMaLongPeriod+20 : s.BullishMaMediumPeriod+5;
+            if(x.Count < needed) return null;
             return ScanBullish(symbol, name, x, market, mode, s);
+        }
         double close=(double)x[^1].Close;
         double ma20=Ta.Sma(x,20)!.Value, ma50=Ta.Sma(x,50)!.Value, ma100=Ta.Sma(x,100)!.Value;
         bool ma20up=ma20>Ta.Sma(x,20,5)!.Value, ma50up=ma50>Ta.Sma(x,50,5)!.Value;
@@ -60,7 +64,8 @@ public static class StockScanner
         if (!shortCycle.RedCandle || !shortCycle.Rsi5BelowLimit || !shortCycle.Rsi5Rising)
             return null;
         double close=(double)x[^1].Close;
-        double ma20=Ta.Sma(x,20)!.Value, ma50=Ta.Sma(x,50)!.Value;
+        int shortPeriod=s.BullishMaShortPeriod, mediumPeriod=s.BullishMaMediumPeriod;
+        double ma20=Ta.Sma(x,shortPeriod)!.Value, ma50=Ta.Sma(x,mediumPeriod)!.Value;
         double volume=(double)x[^1].Volume;
         double averageVolume;
         double relativeStrength;
@@ -70,10 +75,11 @@ public static class StockScanner
 
         if (mode==MarketMode.A_BullTrend)
         {
-            double ma100=Ta.Sma(x,100)!.Value;
+            int longPeriod=s.BullishMaLongPeriod;
+            double ma100=Ta.Sma(x,longPeriod)!.Value;
             if (!(close>ma20 && ma20>ma50 && ma50>ma100 &&
-                  ma20>Ta.Sma(x,20,5) && ma50>Ta.Sma(x,50,5) &&
-                  ma100>Ta.Sma(x,100,20))) return null;
+                  ma20>Ta.Sma(x,shortPeriod,5) && ma50>Ta.Sma(x,mediumPeriod,5) &&
+                  ma100>Ta.Sma(x,longPeriod,20))) return null;
             double high20=x.Take(x.Count-1).TakeLast(20).Max(c=>(double)c.High);
             if (close<high20*0.99) return null;
             relativeStrength=RelativeStrength20(x,market);
@@ -93,7 +99,7 @@ public static class StockScanner
         else
         {
             if (!(close>ma20 && ma20>ma50 &&
-                  ma20>Ta.Sma(x,20,5) && ma50>Ta.Sma(x,50,5))) return null;
+                  ma20>Ta.Sma(x,shortPeriod,5) && ma50>Ta.Sma(x,mediumPeriod,5))) return null;
             double recentHigh=x.TakeLast(20).Max(c=>(double)c.High);
             double pullback=(recentHigh-close)/recentHigh*100;
             if (pullback<s.PullbackMinPercent || pullback>s.PullbackMaxPercent) return null;
@@ -124,15 +130,19 @@ public static class StockScanner
     {
         if (mode is not (MarketMode.A_BullTrend or MarketMode.B_BullRange))
             throw new ArgumentOutOfRangeException(nameof(mode), "單股日 K Debug 僅支援 A/B。");
-        if (x.Count < 130 || market.Count < 30)
+        int requiredBars=Math.Max(130,mode==MarketMode.A_BullTrend ?
+            s.BullishMaLongPeriod+20 : s.BullishMaMediumPeriod+5);
+        if (x.Count < requiredBars || market.Count < 30)
             return new StockScanDebug { Symbol=symbol, Mode=mode,
                 Date=x.Count>0?x[^1].Time:default,
-                HardConditions=new Dictionary<string,bool> { ["至少 130 根個股日 K 與 30 根大盤日 K"]=false },
+                HardConditions=new Dictionary<string,bool> { [$"至少 {requiredBars} 根個股日 K 與 30 根大盤日 K"]=false },
                 Details=$"資料不足：個股 {x.Count} 根、大盤 {market.Count} 根。" };
 
         double close=(double)x[^1].Close;
-        double ma10=Ta.Sma(x,10)!.Value, ma20=Ta.Sma(x,20)!.Value;
-        double ma50=Ta.Sma(x,50)!.Value, ma100=Ta.Sma(x,100)!.Value;
+        int shortPeriod=s.BullishMaShortPeriod, mediumPeriod=s.BullishMaMediumPeriod,
+            longPeriod=s.BullishMaLongPeriod;
+        double ma10=Ta.Sma(x,10)!.Value, ma20=Ta.Sma(x,shortPeriod)!.Value;
+        double ma50=Ta.Sma(x,mediumPeriod)!.Value, ma100=Ta.Sma(x,longPeriod)??0;
         double rsi=Ta.Rsi(x,s.DailyRsiPeriod)??50;
         var macd=Ta.Macd(x,s.DailyMacdFast,s.DailyMacdSlow,s.DailyMacdSignal)??(0,0,0);
         var priorMacd=Ta.Macd(x.Take(x.Count-1).ToArray(),s.DailyMacdFast,
@@ -150,9 +160,9 @@ public static class StockScanner
         {
             recentHigh=x.Take(x.Count-1).TakeLast(20).Max(c=>(double)c.High);
             breakoutDistance=recentHigh>0?(recentHigh-close)/recentHigh*100:100;
-            hard["股價 > MA20 > MA50 > MA100"]=close>ma20 && ma20>ma50 && ma50>ma100;
-            hard["MA20、MA50、MA100 向上"]=ma20>Ta.Sma(x,20,5) &&
-                ma50>Ta.Sma(x,50,5) && ma100>Ta.Sma(x,100,20);
+            hard[$"股價 > MA{shortPeriod} > MA{mediumPeriod} > MA{longPeriod}"]=close>ma20 && ma20>ma50 && ma50>ma100;
+            hard[$"MA{shortPeriod}、MA{mediumPeriod}、MA{longPeriod} 向上"]=ma20>Ta.Sma(x,shortPeriod,5) &&
+                ma50>Ta.Sma(x,mediumPeriod,5) && ma100>Ta.Sma(x,longPeriod,20);
             hard["RSI > 55"]=rsi>55;
             hard["MACD DIF > DEA"]=macd.dif>macd.dea;
             hard["接近前 20 日高點 1% 內"]=close>=recentHigh*0.99;
@@ -164,8 +174,8 @@ public static class StockScanner
         {
             recentHigh=x.TakeLast(20).Max(c=>(double)c.High);
             pullback=recentHigh>0?(recentHigh-close)/recentHigh*100:0;
-            hard["股價 > MA20 > MA50"]=close>ma20 && ma20>ma50;
-            hard["MA20、MA50 向上"]=ma20>Ta.Sma(x,20,5) && ma50>Ta.Sma(x,50,5);
+            hard[$"股價 > MA{shortPeriod} > MA{mediumPeriod}"]=close>ma20 && ma20>ma50;
+            hard[$"MA{shortPeriod}、MA{mediumPeriod} 向上"]=ma20>Ta.Sma(x,shortPeriod,5) && ma50>Ta.Sma(x,mediumPeriod,5);
             hard[$"前 20 日高點回檔 {s.PullbackMinPercent:0.##}～{s.PullbackMaxPercent:0.##}%"]=
                 pullback>=s.PullbackMinPercent && pullback<=s.PullbackMaxPercent;
             hard["成交量低於前 20 日均量"]=volume<averageVolume;

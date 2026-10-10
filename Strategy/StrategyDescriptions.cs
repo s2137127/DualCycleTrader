@@ -15,8 +15,8 @@ public static class StrategyDescriptions
             日 K 主要條件
             • 當日收紅 K（收盤 > 開盤）
             • RSI(5) < {s.Rsi5UpperLimit:0.##}，且今日 RSI(5) 高於昨日
-            • 股價 > MA20 > MA50 > MA100
-            • MA20、MA50、MA100 向上
+            • 股價 > MA{s.BullishMaShortPeriod} > MA{s.BullishMaMediumPeriod} > MA{s.BullishMaLongPeriod}
+            • MA{s.BullishMaShortPeriod}、MA{s.BullishMaMediumPeriod}、MA{s.BullishMaLongPeriod} 向上
             • RSI({s.DailyRsiPeriod}) > 55
             • MACD({s.DailyMacdFast},{s.DailyMacdSlow},{s.DailyMacdSignal}) DIF > DEA
             • 突破或接近 20 日高點（前高的 99% 以上）
@@ -34,8 +34,8 @@ public static class StrategyDescriptions
             日 K 主要條件
             • 當日收紅 K（收盤 > 開盤）
             • RSI(5) < {s.Rsi5UpperLimit:0.##}，且今日 RSI(5) 高於昨日
-            • 股價 > MA20 > MA50
-            • MA20、MA50 向上
+            • 股價 > MA{s.BullishMaShortPeriod} > MA{s.BullishMaMediumPeriod}
+            • MA{s.BullishMaShortPeriod}、MA{s.BullishMaMediumPeriod} 向上
             • 前 20 日高點回檔 {s.PullbackMinPercent:0.##}～{s.PullbackMaxPercent:0.##}%
             • RSI({s.DailyRsiPeriod}) 介於 40～55
             • MACD 負柱縮短

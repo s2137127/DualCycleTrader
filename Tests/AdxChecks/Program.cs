@@ -127,6 +127,17 @@ Check(aScan is not null && aDebug.Passed &&
     aDebug.HardConditions["今日 RSI(5) > 昨日 RSI(5)"] &&
     aDebug.HardConditions["MACD DIF > DEA"],
     "A: rising RSI(5) below 60 and original MACD qualify");
+var customMaSettings = new StrategySettings
+{ BullishMaShortPeriod = 10, BullishMaMediumPeriod = 30, BullishMaLongPeriod = 80 };
+var customMaDebug = StockScanner.DebugScan("A.TW", "A", aDaily, aMarket,
+    MarketMode.A_BullTrend, customMaSettings);
+Check(customMaDebug.HardConditions.ContainsKey("股價 > MA10 > MA30 > MA80") &&
+    Math.Abs(customMaDebug.Ma20 - Ta.Sma(aDaily,10)!.Value) < 0.00001 &&
+    Math.Abs(customMaDebug.Ma50 - Ta.Sma(aDaily,30)!.Value) < 0.00001 &&
+    Math.Abs(customMaDebug.Ma100 - Ta.Sma(aDaily,80)!.Value) < 0.00001 &&
+    customMaDebug.Passed == (StockScanner.Scan("A.TW", "A", aDaily, aMarket,
+        MarketMode.A_BullTrend, customMaSettings) is not null),
+    "A: configurable MA periods are used by scanner and debug");
 var aDoji = aDaily.ToList();
 aDoji[^1] = aDoji[^1] with { Open = aDoji[^1].Close };
 Check(StockScanner.Scan("A.TW", "A", aDoji, aMarket,
@@ -163,6 +174,9 @@ Check(bDebug.HardConditions["股價 > MA20 > MA50"] &&
 Check(bDebug.Passed == (StockScanner.Scan("B.TW", "B", bDaily, bMarket,
     MarketMode.B_BullRange, settings) is not null),
     "B: debug matches scanner");
+Check(StockScanner.DebugScan("B.TW", "B", bDaily, bMarket,
+    MarketMode.B_BullRange, customMaSettings).HardConditions.ContainsKey("股價 > MA10 > MA30"),
+    "B: configurable MA periods are used by debug");
 Check(bDebug.HardConditions.ContainsKey("MACD 負柱縮短") &&
     bDebug.HardConditions.ContainsKey("RSI 介於 40～55") &&
     bDebug.HardConditions.ContainsKey("成交量低於前 20 日均量") &&

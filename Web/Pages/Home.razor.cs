@@ -25,6 +25,7 @@ public class HomeBase : ComponentBase
     protected string Status = "準備就緒", MarketText = "", MarketDetail = "";
     protected string ImportErrorDetails = "";
     protected string Simulation = "", Filter = "全部";
+    protected string MacdPeriodsText = "12,26,9";
     protected string GuideMode = "A";
     protected string DebugSymbol = "", DebugMode = "A", DebugText = "";
     protected DateTime HistoricalDate = DateTime.Today.AddDays(-1);
@@ -80,6 +81,7 @@ public class HomeBase : ComponentBase
         var value = await JS.InvokeAsync<string?>("stockApp.getJson", "settings");
         if (value is not null) Settings = JsonSerializer.Deserialize<StrategySettings>(value, jsonOptions) ?? new();
         Settings.MigrateLegacyScannerDefaults();
+        MacdPeriodsText = $"{Settings.DailyMacdFast},{Settings.DailyMacdSlow},{Settings.DailyMacdSignal}";
         value = await JS.InvokeAsync<string?>("stockApp.getJson", "universe");
         if (value is not null) Universe = JsonSerializer.Deserialize<List<StockInfo>>(value, jsonOptions) ?? new();
         value = await JS.InvokeAsync<string?>("stockApp.getJson", "latest-results");
@@ -91,12 +93,25 @@ public class HomeBase : ComponentBase
     {
         try
         {
+            var periods = MacdPeriodsText.Replace('，', ',').Split(',', StringSplitOptions.TrimEntries);
+            if (periods.Length != 3 || !int.TryParse(periods[0], out int macdFast) ||
+                !int.TryParse(periods[1], out int macdSlow) ||
+                !int.TryParse(periods[2], out int macdSignal) ||
+                macdFast < 2 || macdFast > 100 || macdSlow <= macdFast || macdSlow > 150 ||
+                macdSignal < 2 || macdSignal > 100)
+                throw new InvalidOperationException("MACD 請輸入「快,慢,訊號」，例如 12,26,9；慢線週期須大於快線。");
+            if (Settings.BullishMaShortPeriod < 2 || Settings.BullishMaShortPeriod > 100 ||
+                Settings.BullishMaMediumPeriod <= Settings.BullishMaShortPeriod ||
+                Settings.BullishMaMediumPeriod > 150 ||
+                Settings.BullishMaLongPeriod <= Settings.BullishMaMediumPeriod ||
+                Settings.BullishMaLongPeriod > 300)
+                throw new InvalidOperationException("A/B 均線週期需依序遞增，範圍分別為 2～100、3～150、4～300。");
+            Settings.DailyMacdFast = macdFast;
+            Settings.DailyMacdSlow = macdSlow;
+            Settings.DailyMacdSignal = macdSignal;
+            MacdPeriodsText = $"{macdFast},{macdSlow},{macdSignal}";
             Settings.DailyRsiPeriod = Math.Clamp(Settings.DailyRsiPeriod, 2, 100);
             Settings.Rsi5UpperLimit = Math.Clamp(Settings.Rsi5UpperLimit, 1, 101);
-            Settings.DailyMacdFast = Math.Clamp(Settings.DailyMacdFast, 2, 100);
-            Settings.DailyMacdSlow = Math.Clamp(Math.Max(Settings.DailyMacdSlow,
-                Settings.DailyMacdFast + 1), 3, 150);
-            Settings.DailyMacdSignal = Math.Clamp(Settings.DailyMacdSignal, 2, 100);
             Settings.BreakoutLookbackMin = Math.Clamp(Settings.BreakoutLookbackMin, 10, 60);
             Settings.BreakoutLookbackMax = Math.Clamp(Settings.BreakoutLookbackMax,
                 Settings.BreakoutLookbackMin, 60);
@@ -122,9 +137,10 @@ public class HomeBase : ComponentBase
                 Settings.PullbackRsi14Min, 100);
             Settings.SupportTolerancePercent = Math.Clamp(Settings.SupportTolerancePercent, 0.1, 10);
             await JS.InvokeVoidAsync("stockApp.putJson", "settings", JsonSerializer.Serialize(Settings));
-            Status = "設定已儲存；請按「重新分析」套用新的 RSI(5) 上限。";
+            Error = null;
+            Status = "設定已儲存；請按「重新分析」套用新的策略參數。";
         }
-        catch (Exception ex) { Error = ex.Message; }
+        catch (Exception ex) { Error = ex.Message; Status = "設定未儲存。"; }
     }
 
     protected void Cancel() => cancellation?.Cancel();
@@ -151,7 +167,7 @@ public class HomeBase : ComponentBase
             var mode = DebugMode == "B" ? MarketMode.B_BullRange : MarketMode.A_BullTrend;
             var result = StockScanner.DebugScan(stock.Symbol, stock.Name, daily, market, mode, Settings);
             DebugText = $"{stock.Symbol} {stock.Name}　{result.Date:yyyy/MM/dd}　{(result.Passed ? "入選" : "淘汰")}\n" +
-                $"Close {result.Close:F2}｜MA10 {result.Ma10:F2}｜MA20 {result.Ma20:F2}｜MA50 {result.Ma50:F2}｜MA100 {result.Ma100:F2}\n" +
+                $"Close {result.Close:F2}｜MA10 {result.Ma10:F2}｜MA{Settings.BullishMaShortPeriod} {result.Ma20:F2}｜MA{Settings.BullishMaMediumPeriod} {result.Ma50:F2}｜MA{Settings.BullishMaLongPeriod} {result.Ma100:F2}\n" +
                 $"RSI14 {result.Rsi14:F1}｜日K RSI6 {result.DailyRsi6:F1}｜MACD DIF {result.MacdDif:F3} / DEA {result.MacdDea:F3}\n" +
                 $"成交量 {result.Volume:F0}｜20 日均量 {result.AverageVolume20:F0}｜量比 {result.VolumeRatio:F2}｜相對強度 {result.RelativeStrength20:F1}%\n" +
                 $"近期高點 {result.RecentHigh:F2}｜距突破 {result.DistanceToBreakoutPercent:F1}%｜回檔 {result.PullbackPercent:F1}% / {result.PullbackDays} 日\n" +
@@ -359,6 +375,7 @@ public class HomeBase : ComponentBase
                     Settings = await JsonSerializer.DeserializeAsync<StrategySettings>(settingsStream, jsonOptions)
                         ?? throw new InvalidDataException("設定格式錯誤。");
                     Settings.MigrateLegacyScannerDefaults();
+                    MacdPeriodsText = $"{Settings.DailyMacdFast},{Settings.DailyMacdSlow},{Settings.DailyMacdSignal}";
                     await SaveSettings();
                     continue;
                 }

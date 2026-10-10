@@ -26,9 +26,10 @@
                 <div class="settings-grid">
                     <label>日 K RSI<input type="number" @bind="Settings.DailyRsiPeriod" /></label>
                     <label>A/B RSI(5) 上限（101 不限制）<input type="number" min="1" max="101" step="1" @bind="Settings.Rsi5UpperLimit" /></label>
-                    <label>日 K MACD 快<input type="number" @bind="Settings.DailyMacdFast" /></label>
-                    <label>日 K MACD 慢<input type="number" @bind="Settings.DailyMacdSlow" /></label>
-                    <label>日 K MACD 訊號<input type="number" @bind="Settings.DailyMacdSignal" /></label>
+                    <label>日 K MACD（快,慢,訊號）<input type="text" placeholder="12,26,9" @bind="MacdPeriodsText" /></label>
+                    <label>A/B 短均線週期<input type="number" min="2" max="100" @bind="Settings.BullishMaShortPeriod" /></label>
+                    <label>A/B 中均線週期<input type="number" min="3" max="150" @bind="Settings.BullishMaMediumPeriod" /></label>
+                    <label>A 長均線週期<input type="number" min="4" max="300" @bind="Settings.BullishMaLongPeriod" /></label>
                     <label>A 強量倍數<input type="number" step="0.1" @bind="Settings.BreakoutStrongVolumeRatio" /></label>
                     <label>B 回檔下限 %<input type="number" step="0.1" @bind="Settings.PullbackMinPercent" /></label>
                     <label>B 回檔上限 %<input type="number" step="0.1" @bind="Settings.PullbackMaxPercent" /></label>
