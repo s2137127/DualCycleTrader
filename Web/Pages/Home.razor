@@ -4,7 +4,7 @@
 
 <PageTitle>日 K 選股系統</PageTitle>
 <main class="app-shell">
-    <header><h1>日 K 選股系統</h1><p>手動更新行情，跨裝置查看分析結果</p></header>
+    <header><h1>日 K 選股系統</h1><p>交易日自動更新行情與分析結果，亦可手動重新分析</p></header>
     @if (Error is not null) { <p class="error" role="alert">@Error</p> }
     @if (!Configured) { <p class="notice">請先設定 Firebase 與行情代理網址。</p> }
     else

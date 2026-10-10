@@ -114,7 +114,7 @@ def update_symbol(root, worker, symbol, target_date, year, dry_run):
     if current is None:
         previous = request(document_url(root, symbol, year - 1))
         current = latest_date(previous)
-    if current is not None and current >= target_date.isoformat():
+    if current is not None and current > target_date.isoformat():
         return "current"
 
     days = 510 if current is None else min(max((target_date - dt.date.fromisoformat(current)).days + 10, 10), 730)

@@ -2,7 +2,7 @@
 
 目前 A／B 日 K 選股條件請見 [策略文件](STRATEGY.md)。
 
-原 WinForms 專案仍在根目錄。改造前原始碼備份在 `Backups/WinForms-before-web-migration-2026-10-03.zip`；另一份獨立備份是 Downloads 的 `DualCycleTrader_WinForms_backup_2026-10-03.zip`。`Core` 直接連結原本的 Models、Indicators、Strategy 原始碼，沒有修改公式或閾值。`Web` 是可部署到 GitHub Pages 的 Blazor WebAssembly 網頁；`MarketProxy` 是按使用者要求才向 Yahoo、臺灣證交所及櫃買中心取資料的 Cloudflare Worker。電腦不必長時間開機，也沒有排程監控。
+原 WinForms 專案仍在根目錄。改造前原始碼備份在 `Backups/WinForms-before-web-migration-2026-10-03.zip`；另一份獨立備份是 Downloads 的 `DualCycleTrader_WinForms_backup_2026-10-03.zip`。`Core` 直接連結原本的 Models、Indicators、Strategy 原始碼。`Web` 是可部署到 GitHub Pages 的 Blazor WebAssembly 網頁；`MarketProxy` 是按使用者要求才向 Yahoo、臺灣證交所及櫃買中心取資料的 Cloudflare Worker。電腦不必長時間開機；GitHub Actions 負責排程更新與分析。
 
 ## 1. 本機啟動
 
@@ -82,4 +82,4 @@ npx wrangler deploy
 
 Firestore Standard 免費額度目前包括 1 GiB 儲存、每日 50,000 次讀取和 20,000 次寫入，超出免費額度會影響是否可繼續使用或產生費用，取決於 Firebase 方案。現有本機快取若接近 1 GiB，應先估算實際資料及索引大小；按月分批匯入並在 Firebase Usage 檢查。全市場首次更新可能需數千次 Yahoo 請求，來源可能限流；後續只取近期資料並僅寫入有變化的 K 棒。
 
-GitHub Actions 的 `collect-daily.yml` 在臺灣交易日 14:00 執行日 K 更新，15:00 再重試一次，以應付行情來源延遲；休市日沒有當日大盤日 K 時會略過。排程使用 Pages 發布時相同的 `FIREBASE_PROJECT_ID` 與 `MARKET_API_BASE_URL` repository variables，從既有 Worker 抓行情並寫入共用 Firestore，只有資料有變更才寫入。GitHub Actions 排程可能延遲，不能保證整點完成。網頁的「更新資料」按鈕仍可隨時手動補抓。
+GitHub Actions 的 `collect-daily.yml` 在臺灣時間週一至週五 13:15、14:00 各執行一次。若行情來源已有當日加權指數日 K，便從既有 Worker 更新全市場日 K、重新比對當日已存資料，接著以雲端策略設定執行自動模式分析，將候選結果寫入共用 Firestore；休市日或尚無當日行情時略過。13:15 的日 K 仍是盤中資料，14:00 再更新為較完整的資料。排程使用 Pages 發布時相同的 `FIREBASE_PROJECT_ID` 與 `MARKET_API_BASE_URL` repository variables。GitHub Actions 排程可能延遲，不能保證整點完成。網頁的「更新資料」及「重新分析」按鈕仍可手動執行。

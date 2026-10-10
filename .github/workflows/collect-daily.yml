@@ -2,10 +2,9 @@ name: Collect Taiwan daily candles
 
 on:
   schedule:
-    # Taiwan market closes at 13:30 Asia/Taipei; 06:00 UTC is 14:00 there.
+    # 13:15 and 14:00 Asia/Taipei (UTC+8). Run only when today's index candle exists.
+    - cron: '15 5 * * 1-5'
     - cron: '0 6 * * 1-5'
-    # Retry at 15:00 if Yahoo has not published the day's candle by 14:00.
-    - cron: '0 7 * * 1-5'
   workflow_dispatch:
 
 permissions:
@@ -27,5 +26,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
       - name: Update Firestore daily candles
         run: python scripts/collect_daily.py
+      - name: Reanalyze today's candidates
+        run: dotnet run --project Automation/Automation.csproj --configuration Release

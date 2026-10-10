@@ -39,6 +39,20 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(list(writes[0][1]["fields"]["bars"]["mapValue"]["fields"]),
                          [collector.candle_key(new)])
 
+    def test_current_day_is_refetched_for_second_run(self):
+        bar = {"Time": "2026-10-09T13:15:00", "Open": 10, "High": 11,
+               "Low": 9, "Close": 10, "Volume": 100}
+        document = {"fields": {"bars": {"mapValue": {"fields": {
+            collector.candle_key(bar): collector.candle_value(bar)
+        }}}}}
+        with patch.object(collector, "request", return_value=document), patch.object(
+            collector, "chart", return_value=[bar]
+        ) as chart:
+            result = collector.update_symbol("https://firestore.example/documents", "https://worker.example",
+                                             "0050.TW", dt.date(2026, 10, 9), 2026, True)
+        self.assertEqual(result, "current")
+        chart.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
