@@ -1,0 +1,31 @@
+name: Collect Taiwan daily candles
+
+on:
+  schedule:
+    # Taiwan market closes at 13:30 Asia/Taipei; 06:00 UTC is 14:00 there.
+    - cron: '0 6 * * 1-5'
+    # Retry at 15:00 if Yahoo has not published the day's candle by 14:00.
+    - cron: '0 7 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: collect-taiwan-daily
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+      MARKET_API_BASE_URL: ${{ vars.MARKET_API_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Update Firestore daily candles
+        run: python scripts/collect_daily.py
