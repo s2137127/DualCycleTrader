@@ -211,6 +211,7 @@ window.stockApp = {
         dataChanged = false;
     },
     async getCandles(symbol, timeframe, fromMonth, toMonth) {
+        if (timeframe !== 'D') throw new Error('Only daily candles are supported');
         const periods = monthsBetween(fromMonth, toMonth);
         const groups = await Promise.all(periods.map(async month => {
             const key = cacheKey(symbol, timeframe, month);
@@ -220,6 +221,7 @@ window.stockApp = {
         return JSON.stringify(all.sort((a, b) => a.Time.localeCompare(b.Time)));
     },
     async getCandlesBatch(symbols, timeframe, fromMonth, toMonth) {
+        if (timeframe !== 'D') throw new Error('Only daily candles are supported');
         const periods = monthsBetween(fromMonth, toMonth);
         const entries = symbols.flatMap(symbol => periods.map(month => ({ symbol, month })));
         const cached = await cachedMany(entries.map(({ symbol, month }) => cacheKey(symbol, timeframe, month)));
@@ -237,7 +239,35 @@ window.stockApp = {
         }
         return JSON.stringify(result);
     },
+    async getLatestDates(symbols, year) {
+        const keys = symbols.map(symbol => cacheKey(symbol, 'D', year));
+        const cached = await cachedMany(keys);
+        const groups = await Promise.all(symbols.map(async (symbol, index) => {
+            if (cached[index] !== undefined) return cached[index];
+            const snapshot = await getDoc(candleRef(symbol, 'D', year));
+            return snapshot.exists() ? Object.values(snapshot.data().bars ?? {}) : [];
+        }));
+        await storeMany(groups.flatMap((bars, index) => cached[index] === undefined
+            ? [[keys[index], bars]] : []));
+        const previousYear = String(Number(year) - 1);
+        const missing = symbols.flatMap((symbol, index) => groups[index].length
+            ? [] : [{ symbol, index, key: cacheKey(symbol, 'D', previousYear) }]);
+        if (missing.length) {
+            const previousCached = await cachedMany(missing.map(entry => entry.key));
+            const previousGroups = await Promise.all(missing.map(async (entry, index) => {
+                if (previousCached[index] !== undefined) return previousCached[index];
+                const snapshot = await getDoc(candleRef(entry.symbol, 'D', previousYear));
+                return snapshot.exists() ? Object.values(snapshot.data().bars ?? {}) : [];
+            }));
+            await storeMany(missing.flatMap((entry, index) => previousCached[index] === undefined
+                ? [[entry.key, previousGroups[index]]] : []));
+            missing.forEach((entry, index) => { groups[entry.index] = previousGroups[index]; });
+        }
+        return groups.map(bars => bars.reduce((latest, bar) =>
+            bar.Time > latest ? bar.Time : latest, '') || null);
+    },
     async getLatest(symbol, timeframe) {
+        if (timeframe !== 'D') throw new Error('Only daily candles are supported');
         const now = new Date();
         for (let offset = 0; offset < (timeframe === 'D' ? 3 : 24); offset++) {
             const monthDate = new Date(now.getFullYear(), now.getMonth() - offset, 1);
@@ -252,6 +282,7 @@ window.stockApp = {
         return null;
     },
     async upsertCandles(symbol, timeframe, json, preserveExisting) {
+        if (timeframe !== 'D') throw new Error('Only daily candles are supported');
         const groups = new Map();
         for (const candle of JSON.parse(json)) {
             const month = candleKey(candle).slice(0, timeframe === 'D' ? 4 : 6);

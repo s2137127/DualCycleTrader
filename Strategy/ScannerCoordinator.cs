@@ -46,8 +46,5 @@ public static class ScannerCoordinator
         } };
     }
 
-    public static IReadOnlyDictionary<MarketMode, StockScanner.EntryCheckResult> CheckEntries(
-        IReadOnlyList<Candle> hourly, StockCandidate candidate, StrategySettings settings)
-        => candidate.MatchedStrategies.ToDictionary(m => m,
-            m => StockScanner.CheckEntry60m(hourly, m, settings));
+
 }

@@ -1,6 +1,6 @@
 ﻿# 網頁版使用說明
 
-目前 A／B 選股與 60 分 K 進場條件請見 [策略文件](STRATEGY.md)。
+目前 A／B 日 K 選股條件請見 [策略文件](STRATEGY.md)。
 
 原 WinForms 專案仍在根目錄。改造前原始碼備份在 `Backups/WinForms-before-web-migration-2026-10-03.zip`；另一份獨立備份是 Downloads 的 `DualCycleTrader_WinForms_backup_2026-10-03.zip`。`Core` 直接連結原本的 Models、Indicators、Strategy 原始碼，沒有修改公式或閾值。`Web` 是可部署到 GitHub Pages 的 Blazor WebAssembly 網頁；`MarketProxy` 是按使用者要求才向 Yahoo、臺灣證交所及櫃買中心取資料的 Cloudflare Worker。電腦不必長時間開機，也沒有排程監控。
 
@@ -30,7 +30,7 @@ firebase use --add
 firebase deploy --only firestore
 ```
 
-部署前先檢查 `firestore.rules` 的 UID。規則僅開放指定 UID 的資料路徑，但任何人都能讀寫該路徑；公開網站可能遭修改資料或耗用 Firestore 額度，請定期備份並查看 Usage。Firestore 文件位於 `users/{uid}/candles/{股票_週期_年或月}`：日 K 每股票每年一份文件；60 分 K 每股票每月一份。K 棒以時間作唯一鍵，同時間會合併；沒有變更時不寫入。設定、股票清單和觸發紀錄放在同一使用者的 `state` 子集合，觸發紀錄按月份拆分。
+部署前先檢查 `firestore.rules` 的 UID。規則僅開放指定 UID 的資料路徑，但任何人都能讀寫該路徑；公開網站可能遭修改資料或耗用 Firestore 額度，請定期備份並查看 Usage。Firestore 文件位於 `users/{uid}/candles/{股票_週期_年}`：日 K 每股票每年一份文件。K 棒以時間作唯一鍵，同時間會合併；沒有變更時不寫入。設定和股票清單放在同一使用者的 `state` 子集合。
 
 ## 3. 部署行情代理
 
@@ -62,9 +62,9 @@ npx wrangler deploy
 
 ## 5. 匯入舊資料
 
-原程式的資料通常在 `bin/Debug/net8.0-windows/Data`，或你平常執行的 Release/publish 目錄旁的 `Data`。先另行保留這些資料，勿刪除；Debug、Release 和 publish 可能各有一份，請挑你實際使用且最新的一份，避免重複匯入。開啟網頁後，在「匯入舊版行情 JSON」分批選取 `Data/MarketCache` 下的 `*_D.json` 與 `*_60.json`。也可以選取 `settings.json`、`stock-universe.json`、`historical-signals.json`、`market-state.json`。匯入畫面會回報新增、略過及錯誤數；已有的 K 棒和觸發訊號不會因匯入而覆寫。一次最多選 5000 個檔案，資料量大時分批或分天匯入。
+原程式的資料通常在 `bin/Debug/net8.0-windows/Data`，或你平常執行的 Release/publish 目錄旁的 `Data`。先另行保留這些資料，勿刪除；Debug、Release 和 publish 可能各有一份，請挑你實際使用且最新的一份，避免重複匯入。開啟網頁後，在「匯入舊版行情 JSON」分批選取 `Data/MarketCache` 下的 `*_D.json`。也可以選取 `settings.json`、`stock-universe.json`、`market-state.json`。匯入畫面會回報新增、略過及錯誤數；已有的 K 棒不會因匯入而覆寫。一次最多選 5000 個檔案，資料量大時分批或分天匯入。
 
-原本每股票日 K 與 60 分 K 都是整份 JSON 檔，`historical-signals.json` 保存已分析日期、完整日期、訊號及設定指紋；`market-state.json` 保存確認模式。網頁目前以截至回測日的大盤 K 棒重算確認模式；匯入的舊 `market-state.json` 只保留供查核。
+每股票日 K 使用整份 JSON 檔；`market-state.json` 保存確認模式。網頁以截至回測日的大盤 K 棒重算確認模式；匯入的舊 `market-state.json` 只保留供查核。
 
 ## 6. 本機測試 Firestore
 
@@ -77,5 +77,7 @@ npx wrangler deploy
 完成後在 iPhone Safari 開 `https://YOUR_GITHUB_USER.github.io/REPOSITORY/`，不用登入即可看到共用歷史資料。Safari 的分享按鈕 →「加入主畫面」可建立捷徑。
 
 ## 8. 費用與限制
+
+按「更新資料」會先從瀏覽器快取或 Firestore 檢查每檔日 K 的最新日期；已達大盤最新交易日的股票會直接略過。缺資料者經 Worker 向行情來源抓取：新股票請求約 510 天，已有資料者依缺漏天數向前補抓，至少請求近期 10 天，再合併寫入 Firestore。更新畫面會列出已是最新、行情請求完成、失敗的檔數和各階段耗時。首次建立全市場資料仍須逐檔請求，可能需要較長時間。
 
 Firestore Standard 免費額度目前包括 1 GiB 儲存、每日 50,000 次讀取和 20,000 次寫入，超出免費額度會影響是否可繼續使用或產生費用，取決於 Firebase 方案。現有本機快取若接近 1 GiB，應先估算實際資料及索引大小；按月分批匯入並在 Firebase Usage 檢查。全市場首次更新可能需數千次 Yahoo 請求，來源可能限流；後續只取近期資料並僅寫入有變化的 K 棒。網頁沒有背景更新，只有按鈕觸發時會更新。

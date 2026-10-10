@@ -18,7 +18,6 @@ public static class AppDataPaths
     public static string Settings => Path.Combine(Root, "settings.json");
     public static string StockUniverse => Path.Combine(Root, "stock-universe.json");
     public static string MarketState => Path.Combine(Root, "market-state.json");
-    public static string HistoricalSignals => Path.Combine(Root, "historical-signals.json");
     public static string MarketCache => Path.Combine(Root, "MarketCache");
 
     private static void EnsureInitialized(string root)

@@ -37,7 +37,7 @@ export default {
         const interval = url.searchParams.get('interval') || '';
         const days = Number(url.searchParams.get('days'));
         if (!/^(\^TWII|[0-9]{4}\.(TW|TWO))$/.test(symbol) ||
-            !['1d', '60m'].includes(interval) || !Number.isInteger(days) || days < 5 || days > 730)
+            interval !== '1d' || !Number.isInteger(days) || days < 5 || days > 730)
           return response(JSON.stringify({ error: 'Invalid chart request' }), 400, origin);
         const endpoint = `${YAHOO}${encodeURIComponent(symbol)}?interval=${interval}&range=${days}d&includePrePost=false`;
         return response(JSON.stringify(await fetchJson(endpoint)), 200, origin);

@@ -1,4 +1,4 @@
-﻿namespace DualCycleTrader.Models;
+namespace DualCycleTrader.Models;
 
 public sealed class StockCandidate
 {
@@ -26,5 +26,4 @@ public sealed class StockCandidate
     public double DailyD { get; init; }
     public double DailyJ { get; init; }
     public string Reason { get; init; } = "";
-    public bool Entry60m { get; init; }
 }

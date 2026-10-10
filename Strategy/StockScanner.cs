@@ -1,14 +1,10 @@
-﻿using DualCycleTrader.Indicators;
+using DualCycleTrader.Indicators;
 using DualCycleTrader.Models;
 
 namespace DualCycleTrader.Strategy;
 
 public static class StockScanner
 {
-    public sealed record EntryCheckResult(
-        bool IsMatch,IReadOnlyList<string> UnmetConditions,
-        double MacdDif,double MacdDea,double K,double D,double J);
-
     public static StockCandidate? Scan(string symbol, string name, IReadOnlyList<Candle> x,
         IReadOnlyList<Candle> market, MarketMode mode, StrategySettings s)
     {
@@ -60,6 +56,9 @@ public static class StockScanner
         IReadOnlyList<Candle> x, IReadOnlyList<Candle> market,
         MarketMode mode, StrategySettings s)
     {
+        var shortCycle=ShortCycleConditions(x);
+        if (!shortCycle.RedCandle || !shortCycle.Rsi5Below60 || !shortCycle.Rsi5Rising)
+            return null;
         double close=(double)x[^1].Close;
         double ma20=Ta.Sma(x,20)!.Value, ma50=Ta.Sma(x,50)!.Value;
         double volume=(double)x[^1].Volume;
@@ -89,7 +88,7 @@ public static class StockScanner
             if (rsi<=55) return null;
             macd=Ta.Macd(x,s.DailyMacdFast,s.DailyMacdSlow,s.DailyMacdSignal)??(0,0,0);
             if (macd.dif<=macd.dea) return null;
-            reason=$"20日高附近/突破＋相對大盤強{relativeStrength:F1}%";
+            reason=$"紅 K＋RSI(5) 低於 60 且上升＋20日高附近/突破＋相對大盤強{relativeStrength:F1}%";
         }
         else
         {
@@ -108,7 +107,7 @@ public static class StockScanner
             if (!(macd.hist<0 && previousMacd.hist<0 && macd.hist>previousMacd.hist))
                 return null;
             relativeStrength=RelativeStrength20(x,market);
-            reason=$"回檔{pullback:F1}%＋量縮＋MACD負柱縮短";
+            reason=$"紅 K＋RSI(5) 低於 60 且上升＋回檔{pullback:F1}%＋量縮＋MACD負柱縮短";
         }
 
         var kdj=Ta.Kdj(x,9)??(0,0,0);
@@ -138,10 +137,14 @@ public static class StockScanner
         var macd=Ta.Macd(x,s.DailyMacdFast,s.DailyMacdSlow,s.DailyMacdSignal)??(0,0,0);
         var priorMacd=Ta.Macd(x.Take(x.Count-1).ToArray(),s.DailyMacdFast,
             s.DailyMacdSlow,s.DailyMacdSignal)??(0,0,0);
+        var shortCycle=ShortCycleConditions(x);
         double averageVolume=Ta.AvgVolume(x,20,1)??0;
         double volume=(double)x[^1].Volume;
         double relativeStrength=RelativeStrength20(x,market);
         var hard=new Dictionary<string,bool>();
+        hard["當日收紅 K（收盤 > 開盤）"]=shortCycle.RedCandle;
+        hard["RSI(5) < 60"]=shortCycle.Rsi5Below60;
+        hard["今日 RSI(5) > 昨日 RSI(5)"]=shortCycle.Rsi5Rising;
         double recentHigh, breakoutDistance=0, pullback=0;
         if (mode==MarketMode.A_BullTrend)
         {
@@ -185,107 +188,21 @@ public static class StockScanner
         };
     }
 
-    public static bool Entry60m(IReadOnlyList<Candle> x, MarketMode mode, StrategySettings? settings=null)
-        => CheckEntry60m(x,mode,settings).IsMatch;
-
-    public static EntryCheckResult CheckEntry60m(IReadOnlyList<Candle> x, MarketMode mode, StrategySettings? settings=null)
-    {
-        settings ??= new StrategySettings();
-        if(x.Count<70)
-            return new(false,new[]{ $"60 分 K 資料不足：目前 {x.Count} 根，至少需要 70 根" },
-                double.NaN,double.NaN,double.NaN,double.NaN,double.NaN);
-        double close=(double)x[^1].Close;
-        double rsi=Ta.Rsi(x,settings.IntradayRsiPeriod)??0;
-        double prevRsi=Ta.Rsi(x.Take(x.Count-1).ToList(),settings.IntradayRsiPeriod)??0;
-        var macd=Ta.Macd(x,settings.IntradayMacdFast,settings.IntradayMacdSlow,settings.IntradayMacdSignal)??(0,0,0);
-        var prevMacd=Ta.Macd(x.Take(x.Count-1).ToList(),settings.IntradayMacdFast,settings.IntradayMacdSlow,settings.IntradayMacdSignal)??(0,0,0);
-        var kdj=Ta.Kdj(x,9)??(0,0,0);
-        var prevKdj=Ta.Kdj(x.Take(x.Count-1).ToList(),9)??(0,0,0);
-        double avgVol=Ta.AvgVolume(x,20,1)??0;
-        bool volUp=(double)x[^1].Volume>avgVol;
-        bool kCross=prevKdj.k<=prevKdj.d && kdj.k>kdj.d;
-        bool macdCross=prevMacd.dif<=prevMacd.dea && macd.dif>macd.dea;
-        double ma20=Ta.Sma(x,20)??0;
-        double prevLow=(double)x.Take(x.Count-1).TakeLast(20).Min(c=>c.Low);
-        bool supportHeld=(double)x[^1].Low>=prevLow || Math.Abs(close-ma20)/ma20*100<=2.0;
-        bool noNewLow=(double)x[^1].Low >= (double)x[^2].Low;
-
-        var unmet=new List<string>();
-        void Require(bool condition,string message){if(!condition) unmet.Add(message);}
-
-        if(mode==MarketMode.A_BullTrend)
-        {
-            double prevHigh=x.Take(x.Count-1).TakeLast(20).Max(c=>(double)c.High);
-            double distance=ma20==0?0:(close-ma20)/ma20*100;
-            bool dontChase = distance>settings.OverextendedFrom60Ma20Percent && rsi>settings.OverboughtRsi6;
-            Require(!dontChase,$"避免追價：距 MA20 {distance:F1}% 且 RSI6 {rsi:F1}");
-            Require(close>prevHigh,$"尚未突破前 20 根高點 {prevHigh:F2}（目前 {close:F2}）");
-            Require(volUp,"成交量尚未高於前 20 根均量");
-            Require(rsi>50,$"RSI6 尚未站上 50（目前 {rsi:F1}）");
-            Require(macdCross,$"MACD({settings.IntradayMacdFast},{settings.IntradayMacdSlow},{settings.IntradayMacdSignal}) 尚未出現 DIF 上穿 DEA");
-            Require(kCross,"KDJ 尚未出現 K 上穿 D");
-        }
-        else if(mode==MarketMode.B_BullRange)
-        {
-            int crossWindow=Math.Clamp(settings.PullbackEntryCrossWindowBars,1,5);
-            bool recentMacdCross=macdCross, recentKCross=kCross;
-            if((macdCross || kCross) && crossWindow>1)
-            {
-                for(int offset=1;offset<crossWindow && (!recentMacdCross || !recentKCross);offset++)
-                {
-                    var current=x.Take(x.Count-offset).ToList();
-                    var previous=current.Take(current.Count-1).ToList();
-                    if(!recentMacdCross)
-                    {
-                        var m=Ta.Macd(current,settings.IntradayMacdFast,settings.IntradayMacdSlow,settings.IntradayMacdSignal);
-                        var p=Ta.Macd(previous,settings.IntradayMacdFast,settings.IntradayMacdSlow,settings.IntradayMacdSignal);
-                        recentMacdCross=m is not null && p is not null && p.Value.dif<=p.Value.dea && m.Value.dif>m.Value.dea;
-                    }
-                    if(!recentKCross)
-                    {
-                        var k=Ta.Kdj(current,9);
-                        var p=Ta.Kdj(previous,9);
-                        recentKCross=k is not null && p is not null && p.Value.k<=p.Value.d && k.Value.k>k.Value.d;
-                    }
-                }
-            }
-            Require(supportHeld,"尚未確認守住前低或回到 MA20 附近");
-            Require(noNewLow,"本根 60 分 K 仍創前一根新低");
-            Require(rsi>50,$"RSI6 尚未站上 50（目前 {rsi:F1}）");
-            Require(rsi>=prevRsi,$"RSI6 仍在下降（前值 {prevRsi:F1}，目前 {rsi:F1}）");
-            Require(macdCross || kCross,"本根尚未出現 MACD 或 KDJ 金叉");
-            Require(recentMacdCross && macd.dif>macd.dea,$"MACD({settings.IntradayMacdFast},{settings.IntradayMacdSlow},{settings.IntradayMacdSignal}) 未在最近 {crossWindow} 根金叉並維持多方");
-            Require(recentKCross && kdj.k>kdj.d,$"KDJ 未在最近 {crossWindow} 根金叉並維持多方");
-            Require(volUp,"成交量尚未高於前 20 根均量");
-        }
-        else if(mode==MarketMode.C_BearRange)
-        {
-            Require(supportHeld,"尚未確認守住前低或回到 MA20 附近");
-            Require(noNewLow,"本根 60 分 K 仍創前一根新低");
-            Require(rsi>50,$"RSI6 尚未站上 50（目前 {rsi:F1}）");
-            Require(macdCross,$"MACD({settings.IntradayMacdFast},{settings.IntradayMacdSlow},{settings.IntradayMacdSignal}) 尚未金叉");
-            Require(kCross,"KDJ 尚未金叉");
-            Require(volUp,"成交量尚未高於前 20 根均量");
-        }
-        else if(mode==MarketMode.E_Transition)
-        {
-            Require(close>ma20,$"尚未站上 60 分 MA20（收盤 {close:F2}，MA20 {ma20:F2}）");
-            Require(supportHeld,"尚未確認守住前低或 MA20 支撐");
-            Require(rsi>50,$"RSI6 尚未站上 50（目前 {rsi:F1}）");
-            Require(macdCross,$"MACD({settings.IntradayMacdFast},{settings.IntradayMacdSlow},{settings.IntradayMacdSignal}) 尚未金叉");
-            Require(kCross,"KDJ 尚未金叉");
-            Require(volUp,"成交量尚未高於前 20 根均量");
-        }
-        else unmet.Add("目前市場模式不啟動 60 分鐘多頭進場訊號");
-
-        return new(unmet.Count==0,unmet,macd.dif,macd.dea,kdj.k,kdj.d,kdj.j);
-    }
-
     private static double RelativeStrength20(IReadOnlyList<Candle> s, IReadOnlyList<Candle> m)
     {
         if(s.Count<21||m.Count<21) return 0;
         double sr=(double)(s[^1].Close/s[^21].Close-1)*100;
         double mr=(double)(m[^1].Close/m[^21].Close-1)*100;
         return sr-mr;
+    }
+
+    private static (bool RedCandle, bool Rsi5Below60, bool Rsi5Rising)
+        ShortCycleConditions(IReadOnlyList<Candle> candles)
+    {
+        var todayRsi5=Ta.Rsi(candles,5);
+        var yesterdayRsi5=Ta.Rsi(candles.Take(candles.Count-1).ToArray(),5);
+        return (candles[^1].Close>candles[^1].Open,
+            todayRsi5 is < 60,
+            todayRsi5 is not null && yesterdayRsi5 is not null && todayRsi5>yesterdayRsi5);
     }
 }

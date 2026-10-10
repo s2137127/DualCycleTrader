@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using DualCycleTrader.Models;
 
 namespace DualCycleTrader.Data;
@@ -14,9 +14,6 @@ public sealed class YahooFinanceProvider : IMarketDataProvider
 
     public Task<List<Candle>> GetDailyAsync(string symbol, int days = 260)
         => GetAsync(symbol, "1d", $"{Math.Max(days, 5)}d");
-
-    public Task<List<Candle>> Get60MinuteAsync(string symbol, int days = 30)
-        => GetAsync(symbol, "60m", $"{Math.Min(Math.Max(days, 5), 730)}d");
 
     private async Task<List<Candle>> GetAsync(string symbol, string interval, string range)
     {

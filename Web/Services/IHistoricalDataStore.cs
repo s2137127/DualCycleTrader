@@ -7,6 +7,7 @@ public interface IHistoricalDataStore
     void ClearCache();
     Task<List<Candle>> GetAsync(string symbol,string timeframe,DateTime from,DateTime to);
     Task<List<List<Candle>>> GetManyAsync(IReadOnlyList<string> symbols,string timeframe,DateTime from,DateTime to);
+    Task<IReadOnlyList<DateTime?>> GetLatestDatesAsync(IReadOnlyList<string> symbols,int year);
     Task<DateTime?> GetLatestDateAsync(string symbol,string timeframe);
     Task<(int added,int updated,int skipped)> UpsertRangeAsync(string symbol,string timeframe,
         IReadOnlyList<Candle> candles,bool preserveExisting=false);

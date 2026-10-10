@@ -1,4 +1,4 @@
-﻿using DualCycleTrader.Data;
+using DualCycleTrader.Data;
 using DualCycleTrader.Models;
 using DualCycleTrader.Strategy;
 using DualCycleTrader.UI;
@@ -12,7 +12,6 @@ public sealed class MainForm : Form
     private readonly CachedMarketDataProvider _data;
     private readonly TaiwanStockUniverseProvider _universe = new();
     private readonly TradingModeManager _tradingModes;
-    private readonly HistoricalSignalStore _signalStore = new();
 
     private readonly Label _mode=new(){AutoSize=true,Font=new Font("Segoe UI",16,FontStyle.Bold)};
     private readonly ComboBox _simulationMode=new(){DropDownStyle=ComboBoxStyle.DropDownList,Width=230};
@@ -25,21 +24,15 @@ public sealed class MainForm : Form
     private readonly ComboBox _debugMode=new(){Width=55,DropDownStyle=ComboBoxStyle.DropDownList};
     private readonly Button _debugScan=new(){Text="日K Debug",Height=38,Width=95};
     private readonly Button _backtest=new(){Text="歷史日期分析",Height=38,Width=120};
-    private readonly Button _signalHistory=new(){Text="觸發紀錄",Height=38,Width=95};
     private readonly Button _exportExcel=new(){Text="匯出 Excel",Height=38,Width=105};
-    private readonly ComboBox _signalRange=new(){DropDownStyle=ComboBoxStyle.DropDownList,Width=90};
     private readonly DateTimePicker _backtestDate=new(){Format=DateTimePickerFormat.Short,Width=110};
     private readonly Button _cancel=new(){Text="停止",Height=38,Width=80,Enabled=false};
     private readonly Button _saveSettings=new(){Text="儲存設定",Height=32,Width=90};
     private readonly Button _clearCache=new(){Text="清除快取",Height=32,Width=90};
     private readonly NumericUpDown _dailyRsi=new(){Minimum=2,Maximum=100,Width=65};
-    private readonly NumericUpDown _intradayRsi=new(){Minimum=2,Maximum=100,Width=65};
     private readonly NumericUpDown _dailyMacdFast=new(){Minimum=2,Maximum=100,Width=48};
     private readonly NumericUpDown _dailyMacdSlow=new(){Minimum=3,Maximum=150,Width=48};
     private readonly NumericUpDown _dailyMacdSignal=new(){Minimum=2,Maximum=100,Width=48};
-    private readonly NumericUpDown _intradayMacdFast=new(){Minimum=2,Maximum=100,Width=48};
-    private readonly NumericUpDown _intradayMacdSlow=new(){Minimum=3,Maximum=150,Width=48};
-    private readonly NumericUpDown _intradayMacdSignal=new(){Minimum=2,Maximum=100,Width=48};
     private readonly CheckBox _autoCleanup=new(){Text="自動清理舊行情",AutoSize=true};
     private readonly Label _cacheInfo=new(){AutoSize=true};
     private readonly ProgressBar _progress=new(){Width=360,Height=24};
@@ -51,19 +44,12 @@ public sealed class MainForm : Form
     private readonly StrategyGuideControl _conditionsGuide;
     private MarketMode? _actualMarketMode;
     private DateTime? _historicalDate;
-    private bool _showingSignalHistory;
     private List<object> _gridRows=new();
     private string? _sortColumn;
     private bool _sortAscending=true;
 
     private sealed record ModeOption(string Text,MarketMode? Mode)
     {
-        public override string ToString()=>Text;
-    }
-
-    private sealed record HistoryRangeOption(string Text,int Months=0,int Days=0)
-    {
-        public DateTime StartDate(DateTime today)=>Months>0?today.AddMonths(-Months):today.AddDays(-Days);
         public override string ToString()=>Text;
     }
 
@@ -81,13 +67,9 @@ public sealed class MainForm : Form
         AutoScaleMode=AutoScaleMode.Dpi;
 
         _dailyRsi.Value=_settings.DailyRsiPeriod;
-        _intradayRsi.Value=_settings.IntradayRsiPeriod;
         _dailyMacdFast.Value=_settings.DailyMacdFast;
         _dailyMacdSlow.Value=_settings.DailyMacdSlow;
         _dailyMacdSignal.Value=_settings.DailyMacdSignal;
-        _intradayMacdFast.Value=_settings.IntradayMacdFast;
-        _intradayMacdSlow.Value=_settings.IntradayMacdSlow;
-        _intradayMacdSignal.Value=_settings.IntradayMacdSignal;
         _autoCleanup.Checked=_settings.AutoCleanupCache;
         _simulationMode.Items.AddRange(new object[]{
             new ModeOption("自動（使用確認交易模式）",null),
@@ -100,11 +82,7 @@ public sealed class MainForm : Form
         _backtestDate.MinDate=DateTime.Today.AddMonths(-6);
         _backtestDate.MaxDate=DateTime.Today.AddDays(-1);
         _backtestDate.Value=_backtestDate.MaxDate;
-        _signalRange.Items.AddRange(new object[]{
-            new HistoryRangeOption("半年",Months:6),new HistoryRangeOption("一季",Months:3),
-            new HistoryRangeOption("一個月",Months:1),new HistoryRangeOption("一週",Days:7)});
-        _signalRange.SelectedIndex=0;
-        _resultFilter.Items.AddRange(new object[]{"全部候選","A 突破","B 回檔","C 抗跌","60分已觸發"});
+        _resultFilter.Items.AddRange(new object[]{"全部候選","A 突破","B 回檔","C 抗跌"});
         _resultFilter.SelectedIndex=0;
         _debugMode.Items.AddRange(new object[]{"A","B"});
         _debugMode.SelectedIndex=0;
@@ -121,16 +99,10 @@ public sealed class MainForm : Form
         var settingsRow=new FlowLayoutPanel{Dock=DockStyle.Fill,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=true,Margin=new Padding(0,4,0,4)};
         settingsRow.Controls.Add(new Label{Text="日K RSI:",AutoSize=true,Padding=new Padding(0,7,0,0)});
         settingsRow.Controls.Add(_dailyRsi);
-        settingsRow.Controls.Add(new Label{Text="60分K RSI:",AutoSize=true,Padding=new Padding(10,7,0,0)});
-        settingsRow.Controls.Add(_intradayRsi);
         settingsRow.Controls.Add(new Label{Text="日K MACD 快/慢/訊號:",AutoSize=true,Padding=new Padding(10,7,0,0)});
         settingsRow.Controls.Add(_dailyMacdFast);
         settingsRow.Controls.Add(_dailyMacdSlow);
         settingsRow.Controls.Add(_dailyMacdSignal);
-        settingsRow.Controls.Add(new Label{Text="60分 MACD 快/慢/訊號:",AutoSize=true,Padding=new Padding(10,7,0,0)});
-        settingsRow.Controls.Add(_intradayMacdFast);
-        settingsRow.Controls.Add(_intradayMacdSlow);
-        settingsRow.Controls.Add(_intradayMacdSignal);
         settingsRow.Controls.Add(_autoCleanup);
         settingsRow.Controls.Add(_saveSettings);
         settingsRow.Controls.Add(_clearCache);
@@ -140,8 +112,6 @@ public sealed class MainForm : Form
         buttons.Controls.Add(_debugSymbol); buttons.Controls.Add(_debugMode); buttons.Controls.Add(_debugScan);
         buttons.Controls.Add(new Label{Text="回測收 K 日（近半年）：",AutoSize=true,Padding=new Padding(10,10,0,0)});
         buttons.Controls.Add(_backtestDate); buttons.Controls.Add(_backtest);
-        buttons.Controls.Add(new Label{Text="觸發期間：",AutoSize=true,Padding=new Padding(10,10,0,0)});
-        buttons.Controls.Add(_signalRange); buttons.Controls.Add(_signalHistory);
         buttons.Controls.Add(_exportExcel); buttons.Controls.Add(_cancel); buttons.Controls.Add(_progress);
 
         top.Controls.Add(modeRow);
@@ -182,13 +152,12 @@ public sealed class MainForm : Form
         _reanalyze.Click+=async(_,__)=>await ReanalyzeAsync();
         _debugScan.Click+=(_,__)=>DebugOneStock();
         _backtest.Click+=async(_,__)=>await ReanalyzeAsync(_backtestDate.Value.Date);
-        _signalHistory.Click+=async(_,__)=>await ShowSignalHistoryAsync();
         _exportExcel.Click+=(_,__)=>ExportVisibleGrid();
         _cancel.Click+=(_,__)=>_cts?.Cancel();
         _saveSettings.Click+=(_,__)=>SaveSettings();
         _clearCache.Click+=(_,__)=>ClearCache();
         _simulationMode.SelectedIndexChanged+=async(_,__)=>{
-            if(!_showingSignalHistory && _actualMarketMode is not null && _cts is null)
+            if(_actualMarketMode is not null && _cts is null)
                 await ReanalyzeAsync(_historicalDate);
         };
         _resultFilter.SelectedIndexChanged+=(_,__)=>BindGridRows();
@@ -199,7 +168,7 @@ public sealed class MainForm : Form
             var item=_grid.Rows[e.RowIndex].DataBoundItem;
             if(item is null) return;
             var props=System.ComponentModel.TypeDescriptor.GetProperties(item);
-            MessageBox.Show($"日K：{props["日K原因"]?.GetValue(item)}\r\n\r\n60分：{props["等待原因"]?.GetValue(item)}",
+            MessageBox.Show($"日K：{props["日K原因"]?.GetValue(item)}",
                 $"{props["代號"]?.GetValue(item)} {props["名稱"]?.GetValue(item)} 條件明細");
         };
         _grid.CellFormatting+=GridCellFormatting;
@@ -230,7 +199,6 @@ public sealed class MainForm : Form
     private void SaveSettings()
     {
         _settings.DailyRsiPeriod=(int)_dailyRsi.Value;
-        _settings.IntradayRsiPeriod=(int)_intradayRsi.Value;
         SaveMacdSettings();
         _settings.AutoCleanupCache=_autoCleanup.Checked;
         _settingsStore.Save(_settings);
@@ -261,38 +229,24 @@ public sealed class MainForm : Form
         {
             DateTime earliestHistoryDate=DateTime.Today.AddMonths(-6);
             _status.Text=$"取得大盤資料（支援回測至 {earliestHistoryDate:yyyy/MM/dd}）...";
-            var market=await _data.GetDailyForHistoryAsync("^TWII",earliestHistoryDate);
-            var snap=MarketClassifier.Analyze(market,_settings);
+            await _data.GetDailyForHistoryAsync("^TWII",earliestHistoryDate);
             _status.Text="取得上市＋上櫃股票清單...";
             _latestUniverse=await _universe.GetAllAsync();
             if(_latestUniverse.Count==0) throw new InvalidOperationException("無法取得股票清單。");
             _progress.Minimum=0; _progress.Maximum=_latestUniverse.Count; _progress.Value=0;
 
-            var candidatesBySymbol=new Dictionary<string,StockInfo>();
-            MarketMode[] downloadableModes={MarketMode.A_BullTrend,MarketMode.B_BullRange,
-                MarketMode.C_BearRange,MarketMode.E_Transition};
             for(int i=0;i<_latestUniverse.Count;i++)
             {
                 _cts!.Token.ThrowIfCancellationRequested();
                 var s=_latestUniverse[i]; _status.Text=$"更新日K {i+1}/{_latestUniverse.Count}：{s.Name}";
                 try
                 {
-                    var daily=await _data.GetDailyForHistoryAsync(s.Symbol,earliestHistoryDate);
-                    foreach(var mode in downloadableModes)
-                        if(StockScanner.Scan(s.Symbol,s.Name,daily,market,mode,_settings) is not null)
-                            candidatesBySymbol[s.Symbol]=s;
+                    await _data.GetDailyForHistoryAsync(s.Symbol,earliestHistoryDate);
                 }
                 catch { }
                 _progress.Value=i+1;
             }
 
-            // Preload the union of A/B/C/E candidates so simulation never downloads data.
-            foreach(var info in candidatesBySymbol.Values)
-            {
-                _cts!.Token.ThrowIfCancellationRequested();
-                _status.Text=$"更新60分K：{info.Name}";
-                try { await _data.Get60MinuteAsync(info.Symbol,30); } catch { }
-            }
             _data.MarkDataUpdated();
             _status.Text=$"資料更新完成：共 {_latestUniverse.Count} 檔。請按「重新分析」產生結果。";
             UpdateCacheInfo();
@@ -309,7 +263,6 @@ public sealed class MainForm : Form
         BeginWork();
         try
         {
-            _showingSignalHistory=false;
             _historicalDate=historicalDate;
             if(_latestUniverse.Count==0)
                 _latestUniverse=_universe.GetCachedAll();
@@ -401,28 +354,12 @@ public sealed class MainForm : Form
             _progress.Value=_progress.Maximum;
 
             var candidates=found.OrderByDescending(x=>Rank(x.C,x.C.Mode)).ToList();
-            var analyzed=await Task.Run(()=>
+            var rows=await Task.Run(()=>
             {
                 var result=new List<object>();
-                int missingHourly=0;
                 foreach(var x in candidates)
                 {
                     token.ThrowIfCancellationRequested();
-                    var cached60=_data.GetCached60Minute(x.Info.Symbol);
-                    var h60=historicalDate is null ? cached60
-                        : HistoricalCandles.HourlyAtClose(cached60,historicalDate.Value);
-                    bool hasHistoricalHourly=historicalDate is null ||
-                        (h60.Count>=70 && h60.Any(c=>c.Time.Date==historicalDate.Value.Date));
-                    if(!hasHistoricalHourly) missingHourly++;
-                    if(!hasHistoricalHourly) h60=new List<Models.Candle>();
-                    var entries=ScannerCoordinator.CheckEntries(h60,x.C,_settings);
-                    var entry=entries.Values.FirstOrDefault(e=>e.IsMatch) ?? entries.Values.First();
-                    string signal=!hasHistoricalHourly ? "歷史60分資料不足"
-                        : h60.Count==0 ? "尚未更新" : entries.Values.Any(e=>e.IsMatch)?"符合":"等待";
-                    string waitingReason=!hasHistoricalHourly ? "快取沒有該交易日的 60 分 K，無法回測當日進場訊號。"
-                        : h60.Count==0 ? "尚無 60 分 K 快取，請先更新資料。"
-                        : string.Join("；",entries.Select(e=>$"{ScannerModeText(e.Key)}："+
-                            (e.Value.IsMatch ? "所有條件符合" : string.Join("、",e.Value.UnmetConditions))));
                     string FormatMacd(double dif,double dea)
                         => double.IsNaN(dif)||double.IsNaN(dea) ? "—" : $"DIF {dif:F3} / DEA {dea:F3}";
                     string FormatKdj(double k,double d,double j)
@@ -436,24 +373,18 @@ public sealed class MainForm : Form
                         收盤=x.C.Close,漲跌幅=Math.Round(x.C.ChangePercent,2),
                         RSI=Math.Round(x.C.Rsi14,1),相對強度20=Math.Round(x.C.RelativeStrength20,1),
                         日K_MACD=FormatMacd(x.C.DailyMacdDif,x.C.DailyMacdDea),
-                        日K_KDJ=FormatKdj(x.C.DailyK,x.C.DailyD,x.C.DailyJ),
-                        六十分鐘訊號=signal,等待原因=waitingReason,
-                        六十分K_MACD=FormatMacd(entry.MacdDif,entry.MacdDea),
-                        六十分K_KDJ=FormatKdj(entry.K,entry.D,entry.J)
+                        日K_KDJ=FormatKdj(x.C.DailyK,x.C.DailyD,x.C.DailyJ)
                     });
                 }
-                return (result,missingHourly);
+                return result;
             },token);
-            var rows=analyzed.result;
             _gridRows=rows;
             BindGridRows();
             _status.Text=$"{(historicalDate is null ? "今日" : historicalDate.Value.ToString("yyyy/MM/dd")+" 收 K 回測")}：{string.Join("+",scannerModes.Select(ScannerModeText))}，日K符合 {found.Count} 檔。"+
-                (historicalDate is null ? "" : $" 日K資料不足／非當日交易 {scan.missingDaily} 檔；當日60分資料不足 {analyzed.missingHourly} 檔。");
-            if(historicalDate is not null && (scan.missingDaily>0 || analyzed.missingHourly>0))
+                (historicalDate is null ? "" : $" 日K資料不足／非當日交易 {scan.missingDaily} 檔。");
+            if(historicalDate is not null && (scan.missingDaily>0))
                 MessageBox.Show($"所選日期 {historicalDate.Value:yyyy/MM/dd} 的快取資料不完整：\r\n"+
-                    $"日 K 不足或當日未交易：{scan.missingDaily} 檔\r\n"+
-                    $"當日 60 分 K 不足：{analyzed.missingHourly} 檔\r\n\r\n"+
-                    "已顯示可計算的候選股；60 分資料不足者不會顯示為已觸發。",
+                    $"日 K 不足或當日未交易：{scan.missingDaily} 檔",
                     "歷史資料不足",MessageBoxButtons.OK,MessageBoxIcon.Information);
         }
         catch(OperationCanceledException){_status.Text="已停止分析。";}
@@ -461,155 +392,16 @@ public sealed class MainForm : Form
         finally{EndWork();}
     }
 
-    private async Task ShowSignalHistoryAsync()
-    {
-        SaveSettingsSilently();
-        var range=(_signalRange.SelectedItem as HistoryRangeOption)!;
-        BeginWork();
-        try
-        {
-            if(_latestUniverse.Count==0) _latestUniverse=_universe.GetCachedAll();
-            var market=_data.GetCachedDaily("^TWII");
-            if(_latestUniverse.Count==0 || market.Count<130)
-            {
-                MessageBox.Show("缺少股票清單或大盤日 K 快取，請先按「更新資料」。",
-                    "資料不足",MessageBoxButtons.OK,MessageBoxIcon.Information);
-                return;
-            }
-            DateTime earliest=range.StartDate(DateTime.Today);
-            var marketDates=market.Where(c=>c.Time.Date<DateTime.Today)
-                .OrderBy(c=>c.Time).GroupBy(c=>c.Time.Date).Select(g=>g.Key).Skip(130)
-                .Where(date=>date>=earliest).ToArray();
-            if(marketDates.Length==0)
-            {
-                MessageBox.Show("所選期間缺少足夠的大盤日 K，請先按「更新資料」。",
-                    "資料不足",MessageBoxButtons.OK,MessageBoxIcon.Information);
-                return;
-            }
-            var archive=_signalStore.Load(_settings,_latestUniverse.Select(s=>s.Symbol));
-            var analyzedDates=archive.AnalyzedDates.Concat(archive.CompletedDates)
-                .Select(d=>d.Date).ToHashSet();
-            var missingDates=marketDates.Where(date=>!analyzedDates.Contains(date)).ToHashSet();
-            _progress.Minimum=0; _progress.Maximum=_latestUniverse.Count; _progress.Value=0;
-            var progress=new Progress<int>(value=>_progress.Value=Math.Min(value,_progress.Maximum));
-            var token=_cts!.Token;
-            int candidateStockCount=0, failedDownloads=0, newlyCompleted=0;
-            HistoricalSignalResult? report=null;
-            if(missingDates.Count>0)
-            {
-                DateTime firstMissing=missingDates.Min();
-                _status.Text=$"只分析尚未完成的 {missingDates.Count} 個交易日，從 {firstMissing:yyyy/MM/dd} 開始...";
-                var candidatesByDate=await Task.Run(()=>HistoricalSignalScanner.FindDailyCandidatesByDate(
-                    market,_latestUniverse,_data.GetCachedDaily,_settings,firstMissing,DateTime.Today,
-                    missingDates,token,progress),token);
-                var candidateStocks=candidatesByDate.Values.SelectMany(stocks=>stocks)
-                    .DistinctBy(stock=>stock.Symbol).ToArray();
-                candidateStockCount=candidateStocks.Length;
-                _progress.Maximum=Math.Max(1,candidateStocks.Length); _progress.Value=0;
-                for(int i=0;i<candidateStocks.Length;i++)
-                {
-                    token.ThrowIfCancellationRequested();
-                    var stock=candidateStocks[i];
-                    _status.Text=$"補齊缺漏日期的 60 分 K {i+1}/{candidateStocks.Length}：{stock.Name}";
-                    var cached60=_data.GetCached60Minute(stock.Symbol);
-                    bool hasGap=candidatesByDate.Any(pair=>pair.Value.Any(s=>s.Symbol==stock.Symbol) &&
-                        cached60.Count(c=>c.Time.Date==pair.Key)<5);
-                    try { await _data.Get60MinuteForHistoryAsync(stock.Symbol,firstMissing,hasGap); }
-                    catch { failedDownloads++; }
-                    _progress.Value=i+1;
-                }
-                _progress.Maximum=_latestUniverse.Count; _progress.Value=0;
-                _status.Text="計算尚未完成日期的 60 分 K 觸發...";
-                report=await Task.Run(()=>HistoricalSignalScanner.Scan(market,_latestUniverse,
-                    _data.GetCachedDaily,_data.GetCached60Minute,_settings,firstMissing,DateTime.Today,
-                    token,progress,missingDates),token);
-                var newlyCompleteDates=await Task.Run(()=>FindCompleteSignalDates(
-                    missingDates,candidatesByDate,token),token);
-                newlyCompleted=newlyCompleteDates.Count;
-                archive=_signalStore.Merge(archive,missingDates,newlyCompleteDates,report.Signals);
-                _signalStore.Save(archive);
-            }
-            var selectedSignals=archive.Signals.Where(s=>s.TriggerTime.Date>=earliest &&
-                s.TriggerTime.Date<DateTime.Today).OrderByDescending(s=>s.TriggerTime).ToArray();
-            int analyzedInRange=marketDates.Count(date=>archive.AnalyzedDates.Contains(date) ||
-                archive.CompletedDates.Contains(date));
-            int completedInRange=archive.CompletedDates.Count(d=>marketDates.Contains(d.Date));
-            _showingSignalHistory=true;
-            _mode.Text=$"近{range.Text} 60 分 K 觸發紀錄\r\n{earliest:yyyy/MM/dd}～{DateTime.Today.AddDays(-1):yyyy/MM/dd}";
-            _market.Text="日 K 與交易模式採前一個已收盤交易日；觸發價格為完成訊號的 60 分 K 收盤價。";
-            _modeContext.Text=$"已分析 {analyzedInRange}/{marketDates.Length} 個交易日，其中資料完整 {completedInRange} 日、"+
-                $"資料未齊 {analyzedInRange-completedInRange} 日。本次新增分析 {missingDates.Count} 日；"+
-                $"補抓失敗 {failedDownloads} 檔。股票範圍為目前清單。";
-            _modeContext.ForeColor=Color.DarkOrange;
-            _gridRows=selectedSignals.Select(s=>(object)new{
-                觸發時間=s.TriggerTime,觸發價格=s.TriggerPrice,
-                市場=s.Market,代號=s.Symbol.Split('.')[0],名稱=s.Name,
-                策略=string.Join("+",s.Strategies.Select(ModeCode)),
-                日K判定日=s.DailyDecisionDate,
-                當時交易模式=TradingModeText(s.TradingMode),
-                日K狀態="符合",日K原因=s.DailyReason,
-                六十分鐘訊號="符合",等待原因="所有對應策略的 60 分 K 進場條件均符合。"
-            }).ToList();
-            _sortColumn=null;
-            if(_resultFilter.SelectedIndex!=0) _resultFilter.SelectedIndex=0;
-            BindGridRows();
-            _status.Text=$"{range.Text}已保存觸發 {selectedSignals.Length} 筆；"+
-                (missingDates.Count==0 ? "所選交易日均已分析，這次直接讀取紀錄。" :
-                    $"本次新增分析 {missingDates.Count} 日，尚未分析 {marketDates.Length-analyzedInRange} 日；"+
-                    $"涉及候選股 {candidateStockCount} 檔。"+
-                    (report is null ? "" : $" 本次日 K 候選日 {report.DailyCandidates} 筆。"));
-        }
-        catch(OperationCanceledException){_status.Text="已停止歷史觸發掃描。";}
-        catch(Exception ex){MessageBox.Show(ex.Message,"歷史掃描失敗");_status.Text="歷史掃描失敗";}
-        finally{EndWork();}
-    }
-
-    private List<DateTime> FindCompleteSignalDates(IReadOnlySet<DateTime> dates,
-        IReadOnlyDictionary<DateTime,IReadOnlyList<StockInfo>> candidatesByDate,
-        CancellationToken token)
-    {
-        var complete=new List<DateTime>();
-        var dailyBySymbol=new Dictionary<string,List<Candle>>();
-        var hourlyBySymbol=new Dictionary<string,List<Candle>>();
-        foreach(var date in dates.OrderBy(d=>d))
-        {
-            token.ThrowIfCancellationRequested();
-            bool ready=true;
-            if(candidatesByDate.TryGetValue(date,out var stocks))
-                foreach(var stock in stocks)
-                {
-                    token.ThrowIfCancellationRequested();
-                    if(!dailyBySymbol.TryGetValue(stock.Symbol,out var daily))
-                        dailyBySymbol[stock.Symbol]=daily=_data.GetCachedDaily(stock.Symbol);
-                    // A halted stock has no bar on this date and cannot trigger.
-                    if(!daily.Any(c=>c.Time.Date==date)) continue;
-                    if(!hourlyBySymbol.TryGetValue(stock.Symbol,out var hourly))
-                        hourlyBySymbol[stock.Symbol]=hourly=_data.GetCached60Minute(stock.Symbol);
-                    int available=hourly.Count(c=>c.Time.Date<=date);
-                    int onDate=hourly.Count(c=>c.Time.Date==date);
-                    if(available<70 || onDate<5)
-                    {
-                        ready=false;
-                        break;
-                    }
-                }
-            if(ready) complete.Add(date);
-        }
-        return complete;
-    }
-
     private void BeginWork()
     {
         _cts=new CancellationTokenSource();
         _updateData.Enabled=false; _reanalyze.Enabled=false; _backtest.Enabled=false;
-        _signalHistory.Enabled=false; _signalRange.Enabled=false;
         _backtestDate.Enabled=false; _simulationMode.Enabled=false; _cancel.Enabled=true;
     }
 
     private void EndWork()
     {
         _updateData.Enabled=true; _reanalyze.Enabled=true; _backtest.Enabled=true;
-        _signalHistory.Enabled=true; _signalRange.Enabled=true;
         _backtestDate.Enabled=true; _simulationMode.Enabled=true; _cancel.Enabled=false;
         _cts?.Dispose(); _cts=null; UpdateCacheInfo();
     }
@@ -618,11 +410,11 @@ public sealed class MainForm : Form
     {
         if(e.RowIndex<0 || e.ColumnIndex<0) return;
         string column=_grid.Columns[e.ColumnIndex].Name;
-        if(column!="六十分鐘訊號" && column!="日K狀態") return;
+        if(column!="日K狀態") return;
         var item=_grid.Rows[e.RowIndex].DataBoundItem;
         if(item is null) return;
         e.ToolTipText=System.ComponentModel.TypeDescriptor.GetProperties(item)
-            [column=="日K狀態" ? "日K原因" : "等待原因"]?.GetValue(item)?.ToString() ?? "";
+            ["日K原因"]?.GetValue(item)?.ToString() ?? "";
     }
 
     private void BindGridRows()
@@ -633,21 +425,15 @@ public sealed class MainForm : Form
         _grid.DataSource=_gridRows.Where(row=>{
             var props=System.ComponentModel.TypeDescriptor.GetProperties(row);
             string strategy=props["策略"]?.GetValue(row)?.ToString() ?? "";
-            string signal=props["六十分鐘訊號"]?.GetValue(row)?.ToString() ?? "";
             return filter switch { "A 突破"=>strategy.Contains('A'),"B 回檔"=>strategy.Contains('B'),
-                "C 抗跌"=>strategy.Contains('C'),"60分已觸發"=>signal=="符合",_=>true };
+                "C 抗跌"=>strategy.Contains('C'),_=>true };
         }).ToList();
-        string[] compoundColumns={"等待原因","日K原因","日K_MACD","日K_KDJ","六十分K_MACD","六十分K_KDJ"};
+        string[] compoundColumns={"日K原因","日K_MACD","日K_KDJ"};
         foreach(DataGridViewColumn column in _grid.Columns)
             column.SortMode=compoundColumns.Contains(column.Name)
                 ? DataGridViewColumnSortMode.NotSortable
                 : DataGridViewColumnSortMode.Programmatic;
 
-        if(_grid.Columns["等待原因"] is DataGridViewColumn reasonColumn)
-        {
-            reasonColumn.MinimumWidth=220;
-            reasonColumn.AutoSizeMode=DataGridViewAutoSizeColumnMode.Fill;
-        }
         if(_sortColumn is not null && _grid.Columns[_sortColumn] is DataGridViewColumn sortedColumn)
             sortedColumn.HeaderCell.SortGlyphDirection=_sortAscending?SortOrder.Ascending:SortOrder.Descending;
         if(horizontalOffset>0 && _grid.Columns.Count>0)
@@ -762,7 +548,6 @@ public sealed class MainForm : Form
     private void SaveSettingsSilently()
     {
         _settings.DailyRsiPeriod=(int)_dailyRsi.Value;
-        _settings.IntradayRsiPeriod=(int)_intradayRsi.Value;
         SaveMacdSettings();
         _settings.AutoCleanupCache=_autoCleanup.Checked;
         _settingsStore.Save(_settings);
@@ -779,14 +564,9 @@ public sealed class MainForm : Form
     {
         if(_dailyMacdFast.Value>=_dailyMacdSlow.Value)
             _dailyMacdSlow.Value=_dailyMacdFast.Value+1;
-        if(_intradayMacdFast.Value>=_intradayMacdSlow.Value)
-            _intradayMacdSlow.Value=_intradayMacdFast.Value+1;
         _settings.DailyMacdFast=(int)_dailyMacdFast.Value;
         _settings.DailyMacdSlow=(int)_dailyMacdSlow.Value;
         _settings.DailyMacdSignal=(int)_dailyMacdSignal.Value;
-        _settings.IntradayMacdFast=(int)_intradayMacdFast.Value;
-        _settings.IntradayMacdSlow=(int)_intradayMacdSlow.Value;
-        _settings.IntradayMacdSignal=(int)_intradayMacdSignal.Value;
     }
 
     private static double Rank(StockCandidate c,MarketMode m)=>m switch{

@@ -9,7 +9,8 @@ public sealed class MarketApi(HttpClient http)
 {
     public async Task<List<Candle>> GetAsync(string symbol,string timeframe,int days)
     {
-        string interval=timeframe=="D"?"1d":"60m";
+        if(timeframe!="D") throw new ArgumentOutOfRangeException(nameof(timeframe));
+        const string interval="1d";
         string url=$"chart?symbol={Uri.EscapeDataString(symbol)}&interval={interval}&days={days}";
         using var doc=JsonDocument.Parse(await http.GetStringAsync(url));
         var result=doc.RootElement.GetProperty("chart").GetProperty("result")[0];

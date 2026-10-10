@@ -54,6 +54,7 @@ public sealed class FirestoreHistoricalDataStore(IJSRuntime js) : IHistoricalDat
 
     public async Task<List<Candle>> GetAsync(string symbol,string timeframe,DateTime from,DateTime to)
     {
+        if(timeframe!="D") throw new ArgumentOutOfRangeException(nameof(timeframe));
         var key=new CacheKey(symbol,timeframe,from,to);
         if(TryGetCached(key,out var cached)) return cached;
         string json=await js.InvokeAsync<string>("stockApp.getCandles",symbol,timeframe,
@@ -68,6 +69,7 @@ public sealed class FirestoreHistoricalDataStore(IJSRuntime js) : IHistoricalDat
     public async Task<List<List<Candle>>> GetManyAsync(IReadOnlyList<string> symbols,string timeframe,
         DateTime from,DateTime to)
     {
+        if(timeframe!="D") throw new ArgumentOutOfRangeException(nameof(timeframe));
         if(symbols.Count==0) return new();
         var missing=symbols.Where(symbol=>!TryGetCached(new(symbol,timeframe,from,to),out _))
             .Distinct().ToArray();
@@ -87,13 +89,24 @@ public sealed class FirestoreHistoricalDataStore(IJSRuntime js) : IHistoricalDat
 
     public async Task<DateTime?> GetLatestDateAsync(string symbol,string timeframe)
     {
+        if(timeframe!="D") throw new ArgumentOutOfRangeException(nameof(timeframe));
         string? value=await js.InvokeAsync<string?>("stockApp.getLatest",symbol,timeframe);
         return DateTime.TryParse(value,out var date)?date:null;
+    }
+
+    public async Task<IReadOnlyList<DateTime?>> GetLatestDatesAsync(IReadOnlyList<string> symbols,int year)
+    {
+        if(symbols.Count==0) return Array.Empty<DateTime?>();
+        var values=await js.InvokeAsync<string?[]>("stockApp.getLatestDates",symbols,year.ToString());
+        if(values.Length!=symbols.Count) throw new InvalidDataException("最新行情日期數量與股票數量不符。");
+        return values.Select(value=>DateTime.TryParse(value,out var date) ? date : (DateTime?)null)
+            .ToArray();
     }
 
     public async Task<(int added,int updated,int skipped)> UpsertRangeAsync(string symbol,string timeframe,
         IReadOnlyList<Candle> candles,bool preserveExisting=false)
     {
+        if(timeframe!="D") throw new ArgumentOutOfRangeException(nameof(timeframe));
         var result=await js.InvokeAsync<UpsertResult>("stockApp.upsertCandles",symbol,timeframe,
             JsonSerializer.Serialize(candles,JsonOptions),preserveExisting);
         if(result.Added>0 || result.Updated>0) Invalidate(symbol,timeframe);

@@ -11,6 +11,5 @@
     <Compile Include="../Strategy/*.cs" Link="Strategy/%(Filename)%(Extension)" />
     <Compile Include="../Data/AppDataPaths.cs" Link="Data/AppDataPaths.cs" />
     <Compile Include="../Data/StockInfo.cs" Link="Data/StockInfo.cs" />
-    <Compile Include="../Data/HistoricalSignalStore.cs" Link="Data/HistoricalSignalStore.cs" />
   </ItemGroup>
 </Project>

@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using DualCycleTrader.Models;
 
 namespace DualCycleTrader.Data;
@@ -63,47 +63,7 @@ public sealed class CachedMarketDataProvider : IMarketDataProvider
         return merged;
     }
 
-    public async Task<List<Candle>> Get60MinuteAsync(string symbol, int days = 30)
-    {
-        var cached = Load(symbol, "60");
-        bool needsBackfill = cached.Count == 0 || cached[0].Time.Date > DateTime.Today.AddDays(-59);
-        if (HasToday(cached) && !needsBackfill) return cached;
-
-        int requestDays = needsBackfill ? 60 : 5;
-        var fresh = await _remote.Get60MinuteAsync(symbol, requestDays);
-        var merged = Merge(cached, fresh);
-
-        if (_settings.AutoCleanupCache)
-        {
-            DateTime cutoff = DateTime.Today.AddDays(-Math.Max(190, _settings.IntradayRetentionDays));
-            merged = merged.Where(x => x.Time >= cutoff).ToList();
-        }
-
-        Save(symbol, "60", merged);
-        return merged;
-    }
-
-    public async Task<List<Candle>> Get60MinuteForHistoryAsync(string symbol, DateTime earliestDate,
-        bool forceRefresh = false)
-    {
-        DateTime requiredStart = earliestDate.Date.AddDays(-30);
-        var cached = Load(symbol, "60");
-        if (!forceRefresh && cached.Count > 0 && cached[0].Time.Date <= requiredStart && HasToday(cached))
-            return cached;
-
-        int requestDays = Math.Min(730, Math.Max(60,
-            (int)Math.Ceiling((DateTime.Today - requiredStart).TotalDays) + 1));
-        var fresh = await _remote.Get60MinuteAsync(symbol, requestDays);
-        var merged = Merge(cached, fresh);
-        if (_settings.AutoCleanupCache)
-            merged = merged.Where(c => c.Time.Date >= requiredStart).ToList();
-        Save(symbol, "60", merged);
-        return merged;
-    }
-
     public List<Candle> GetCachedDaily(string symbol) => Load(symbol, "D");
-
-    public List<Candle> GetCached60Minute(string symbol) => Load(symbol, "60");
 
     public void MarkDataUpdated()
         => File.WriteAllText(_lastUpdatePath, DateTime.Now.ToString("O"));

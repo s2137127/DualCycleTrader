@@ -1,4 +1,4 @@
-﻿using DualCycleTrader.Models;
+using DualCycleTrader.Models;
 using DualCycleTrader.Strategy;
 
 namespace DualCycleTrader.UI;
@@ -57,7 +57,7 @@ public sealed class StrategyGuideControl : UserControl
 
     public void RefreshContent()
     {
-        _parameterSummary.Text=$"目前參數：盤型連續確認 {Math.Max(1,_settings.MarketRegimeConfirmationDays)} 日｜多方雙選股 {(_settings.EnableBullishDualScanner?"A+B":"僅 A")}｜日 K RSI({_settings.DailyRsiPeriod})、MACD({_settings.DailyMacdFast},{_settings.DailyMacdSlow},{_settings.DailyMacdSignal})｜60 分 K RSI({_settings.IntradayRsiPeriod})、MACD({_settings.IntradayMacdFast},{_settings.IntradayMacdSlow},{_settings.IntradayMacdSignal})｜A 突破強量門檻 {_settings.BreakoutVolumeMultiple:0.##} 倍｜B 股價 > MA20 > MA50、回檔 {_settings.PullbackMinPercent:0.##}～{_settings.PullbackMaxPercent:0.##}%｜C 相對強度 +{_settings.RelativeStrengthMin:0.##}%｜顯示全部符合條件的候選股";
+        _parameterSummary.Text=$"目前參數：盤型連續確認 {Math.Max(1,_settings.MarketRegimeConfirmationDays)} 日｜多方雙選股 {(_settings.EnableBullishDualScanner?"A+B":"僅 A")}｜日 K RSI({_settings.DailyRsiPeriod})、MACD({_settings.DailyMacdFast},{_settings.DailyMacdSlow},{_settings.DailyMacdSignal})｜A 突破強量門檻 {_settings.BreakoutVolumeMultiple:0.##} 倍｜B 股價 > MA20 > MA50、回檔 {_settings.PullbackMinPercent:0.##}～{_settings.PullbackMaxPercent:0.##}%｜C 相對強度 +{_settings.RelativeStrengthMin:0.##}%｜顯示全部符合條件的候選股";
         if(_view==StrategyGuideView.Conditions && _description is not null)
         {
             var mode=(MarketMode)(_description.Tag ?? MarketMode.A_BullTrend);
@@ -88,7 +88,7 @@ public sealed class StrategyGuideControl : UserControl
             foreach(Control control in modes.Controls){control.Width=itemWidth;control.Height=itemHeight;}
         };
         flow.Controls.Add(Card("STEP 4　依確認模式啟動選股器", "",Color.White,900,155,modes));
-        foreach(string step in new[]{"STEP 5　掃描個股日 K；A+B 候選合併去重","STEP 6　依個股策略檢查對應的 60 分鐘 K","STEP 7　產生新進場訊號","既有持股出場：目前版本尚未實作"})
+        foreach(string step in new[]{"STEP 5　掃描個股日 K；A+B 候選合併去重","STEP 6　顯示日 K 候選結果","既有持股出場：目前版本尚未實作"})
         {
             flow.Controls.Add(Arrow());
             flow.Controls.Add(Card(step,"",Color.White,900,54));

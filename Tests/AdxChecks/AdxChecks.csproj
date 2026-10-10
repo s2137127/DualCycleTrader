@@ -15,13 +15,11 @@
     <Compile Include="../../Data/AppDataPaths.cs" Link="AppDataPaths.cs" />
     <Compile Include="../../Data/IMarketDataProvider.cs" Link="IMarketDataProvider.cs" />
     <Compile Include="../../Data/CachedMarketDataProvider.cs" Link="CachedMarketDataProvider.cs" />
-    <Compile Include="../../Data/HistoricalSignalStore.cs" Link="HistoricalSignalStore.cs" />
     <Compile Include="../../Strategy/MarketClassifier.cs" Link="MarketClassifier.cs" />
     <Compile Include="../../Strategy/StockScanner.cs" Link="StockScanner.cs" />
     <Compile Include="../../Strategy/TradingModeManager.cs" Link="TradingModeManager.cs" />
     <Compile Include="../../Strategy/ScannerCoordinator.cs" Link="ScannerCoordinator.cs" />
     <Compile Include="../../Strategy/HistoricalCandles.cs" Link="HistoricalCandles.cs" />
-    <Compile Include="../../Strategy/HistoricalSignalScanner.cs" Link="HistoricalSignalScanner.cs" />
     <Compile Include="../../Data/TaiwanStockUniverseProvider.cs" Link="TaiwanStockUniverseProvider.cs" />
     <Compile Include="../../Data/StockInfo.cs" Link="StockInfo.cs" />
     <Compile Include="../../ExcelExporter.cs" Link="ExcelExporter.cs" />
