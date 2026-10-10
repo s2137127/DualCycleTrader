@@ -56,8 +56,8 @@ public static class StockScanner
         IReadOnlyList<Candle> x, IReadOnlyList<Candle> market,
         MarketMode mode, StrategySettings s)
     {
-        var shortCycle=ShortCycleConditions(x);
-        if (!shortCycle.RedCandle || !shortCycle.Rsi5Below60 || !shortCycle.Rsi5Rising)
+        var shortCycle=ShortCycleConditions(x,s.Rsi5UpperLimit);
+        if (!shortCycle.RedCandle || !shortCycle.Rsi5BelowLimit || !shortCycle.Rsi5Rising)
             return null;
         double close=(double)x[^1].Close;
         double ma20=Ta.Sma(x,20)!.Value, ma50=Ta.Sma(x,50)!.Value;
@@ -88,7 +88,7 @@ public static class StockScanner
             if (rsi<=55) return null;
             macd=Ta.Macd(x,s.DailyMacdFast,s.DailyMacdSlow,s.DailyMacdSignal)??(0,0,0);
             if (macd.dif<=macd.dea) return null;
-            reason=$"紅 K＋RSI(5) 低於 60 且上升＋20日高附近/突破＋相對大盤強{relativeStrength:F1}%";
+            reason=$"紅 K＋RSI(5) 低於 {s.Rsi5UpperLimit:0.##} 且上升＋20日高附近/突破＋相對大盤強{relativeStrength:F1}%";
         }
         else
         {
@@ -107,7 +107,7 @@ public static class StockScanner
             if (!(macd.hist<0 && previousMacd.hist<0 && macd.hist>previousMacd.hist))
                 return null;
             relativeStrength=RelativeStrength20(x,market);
-            reason=$"紅 K＋RSI(5) 低於 60 且上升＋回檔{pullback:F1}%＋量縮＋MACD負柱縮短";
+            reason=$"紅 K＋RSI(5) 低於 {s.Rsi5UpperLimit:0.##} 且上升＋回檔{pullback:F1}%＋量縮＋MACD負柱縮短";
         }
 
         var kdj=Ta.Kdj(x,9)??(0,0,0);
@@ -137,13 +137,13 @@ public static class StockScanner
         var macd=Ta.Macd(x,s.DailyMacdFast,s.DailyMacdSlow,s.DailyMacdSignal)??(0,0,0);
         var priorMacd=Ta.Macd(x.Take(x.Count-1).ToArray(),s.DailyMacdFast,
             s.DailyMacdSlow,s.DailyMacdSignal)??(0,0,0);
-        var shortCycle=ShortCycleConditions(x);
+        var shortCycle=ShortCycleConditions(x,s.Rsi5UpperLimit);
         double averageVolume=Ta.AvgVolume(x,20,1)??0;
         double volume=(double)x[^1].Volume;
         double relativeStrength=RelativeStrength20(x,market);
         var hard=new Dictionary<string,bool>();
         hard["當日收紅 K（收盤 > 開盤）"]=shortCycle.RedCandle;
-        hard["RSI(5) < 60"]=shortCycle.Rsi5Below60;
+        hard[$"RSI(5) < {s.Rsi5UpperLimit:0.##}"]=shortCycle.Rsi5BelowLimit;
         hard["今日 RSI(5) > 昨日 RSI(5)"]=shortCycle.Rsi5Rising;
         double recentHigh, breakoutDistance=0, pullback=0;
         if (mode==MarketMode.A_BullTrend)
@@ -196,13 +196,13 @@ public static class StockScanner
         return sr-mr;
     }
 
-    private static (bool RedCandle, bool Rsi5Below60, bool Rsi5Rising)
-        ShortCycleConditions(IReadOnlyList<Candle> candles)
+    private static (bool RedCandle, bool Rsi5BelowLimit, bool Rsi5Rising)
+        ShortCycleConditions(IReadOnlyList<Candle> candles,double rsi5UpperLimit)
     {
         var todayRsi5=Ta.Rsi(candles,5);
         var yesterdayRsi5=Ta.Rsi(candles.Take(candles.Count-1).ToArray(),5);
         return (candles[^1].Close>candles[^1].Open,
-            todayRsi5 is < 60,
+            todayRsi5 is not null && todayRsi5 < rsi5UpperLimit,
             todayRsi5 is not null && yesterdayRsi5 is not null && todayRsi5>yesterdayRsi5);
     }
 }

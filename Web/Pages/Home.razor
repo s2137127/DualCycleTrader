@@ -25,6 +25,7 @@
             <details><summary>策略設定</summary>
                 <div class="settings-grid">
                     <label>日 K RSI<input type="number" @bind="Settings.DailyRsiPeriod" /></label>
+                    <label>A/B RSI(5) 上限（101 不限制）<input type="number" min="1" max="101" step="1" @bind="Settings.Rsi5UpperLimit" /></label>
                     <label>日 K MACD 快<input type="number" @bind="Settings.DailyMacdFast" /></label>
                     <label>日 K MACD 慢<input type="number" @bind="Settings.DailyMacdSlow" /></label>
                     <label>日 K MACD 訊號<input type="number" @bind="Settings.DailyMacdSignal" /></label>

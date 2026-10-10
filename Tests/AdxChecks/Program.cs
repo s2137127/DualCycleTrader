@@ -138,6 +138,12 @@ var aHighRsi = DailySeries(Enumerable.Range(0, 130).Select(i => 100m + i * 0.2m)
 Check(!StockScanner.DebugScan("A.TW", "A", aHighRsi, aMarket,
     MarketMode.A_BullTrend, settings).HardConditions["RSI(5) < 60"],
     "A: RSI(5) at 60 or above is rejected");
+var relaxedRsiSettings = new StrategySettings { Rsi5UpperLimit = 101 };
+Check(StockScanner.DebugScan("A.TW", "A", aHighRsi, aMarket,
+    MarketMode.A_BullTrend, relaxedRsiSettings).HardConditions["RSI(5) < 101"] &&
+    StockScanner.DebugScan("A.TW", "A", aDaily, aMarket,
+        MarketMode.A_BullTrend, relaxedRsiSettings).Passed,
+    "A: configurable RSI(5) upper limit is used by debug and scan");
 var aFallingRsi = aDaily.ToList();
 aFallingRsi[^1] = aFallingRsi[^1] with
 { Close = aFallingRsi[^2].Close - 0.1m, Open = aFallingRsi[^2].Close - 0.2m };
@@ -164,6 +170,9 @@ Check(bDebug.HardConditions.ContainsKey("MACD 負柱縮短") &&
     bDebug.HardConditions.ContainsKey("RSI(5) < 60") &&
     bDebug.HardConditions.ContainsKey("今日 RSI(5) > 昨日 RSI(5)"),
     "B: original pullback filters are restored");
+Check(StockScanner.DebugScan("B.TW", "B", bDaily, bMarket,
+    MarketMode.B_BullRange, relaxedRsiSettings).HardConditions.ContainsKey("RSI(5) < 101"),
+    "B: configurable RSI(5) upper limit appears in debug");
 var oldDefaults = JsonSerializer.Deserialize<StrategySettings>(
     "{\"PullbackMinPercent\":3,\"PullbackMaxPercent\":10,\"ABScannerVersion\":2,\"BreakoutVolumeMultiple\":1.3}")!;
 oldDefaults.MigrateLegacyScannerDefaults();

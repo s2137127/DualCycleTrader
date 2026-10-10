@@ -14,7 +14,7 @@ public static class StrategyDescriptions
 
             日 K 主要條件
             • 當日收紅 K（收盤 > 開盤）
-            • RSI(5) < 60，且今日 RSI(5) 高於昨日
+            • RSI(5) < {s.Rsi5UpperLimit:0.##}，且今日 RSI(5) 高於昨日
             • 股價 > MA20 > MA50 > MA100
             • MA20、MA50、MA100 向上
             • RSI({s.DailyRsiPeriod}) > 55
@@ -33,7 +33,7 @@ public static class StrategyDescriptions
 
             日 K 主要條件
             • 當日收紅 K（收盤 > 開盤）
-            • RSI(5) < 60，且今日 RSI(5) 高於昨日
+            • RSI(5) < {s.Rsi5UpperLimit:0.##}，且今日 RSI(5) 高於昨日
             • 股價 > MA20 > MA50
             • MA20、MA50 向上
             • 前 20 日高點回檔 {s.PullbackMinPercent:0.##}～{s.PullbackMaxPercent:0.##}%

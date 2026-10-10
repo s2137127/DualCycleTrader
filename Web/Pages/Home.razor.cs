@@ -92,6 +92,7 @@ public class HomeBase : ComponentBase
         try
         {
             Settings.DailyRsiPeriod = Math.Clamp(Settings.DailyRsiPeriod, 2, 100);
+            Settings.Rsi5UpperLimit = Math.Clamp(Settings.Rsi5UpperLimit, 1, 101);
             Settings.DailyMacdFast = Math.Clamp(Settings.DailyMacdFast, 2, 100);
             Settings.DailyMacdSlow = Math.Clamp(Math.Max(Settings.DailyMacdSlow,
                 Settings.DailyMacdFast + 1), 3, 150);
@@ -121,7 +122,7 @@ public class HomeBase : ComponentBase
                 Settings.PullbackRsi14Min, 100);
             Settings.SupportTolerancePercent = Math.Clamp(Settings.SupportTolerancePercent, 0.1, 10);
             await JS.InvokeVoidAsync("stockApp.putJson", "settings", JsonSerializer.Serialize(Settings));
-            Status = "設定已儲存。";
+            Status = "設定已儲存；請按「重新分析」套用新的 RSI(5) 上限。";
         }
         catch (Exception ex) { Error = ex.Message; }
     }

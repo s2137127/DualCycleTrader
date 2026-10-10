@@ -6,6 +6,7 @@ public sealed class StrategySettings
     public int DailyMacdFast { get; set; } = 12;
     public int DailyMacdSlow { get; set; } = 26;
     public int DailyMacdSignal { get; set; } = 9;
+    public double Rsi5UpperLimit { get; set; } = 60.0;
 
     public int DailyRetentionBars { get; set; } = 500;
     public bool AutoCleanupCache { get; set; } = true;
