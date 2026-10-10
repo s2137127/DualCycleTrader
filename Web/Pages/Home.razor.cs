@@ -313,7 +313,7 @@ public class HomeBase : ComponentBase
                 Status = "目前交易模式未啟動選股策略，分析完成。";
                 return;
             }
-            var found = new List<(StockInfo Stock, StockCandidate Candidate)>();
+            var found = new List<(StockInfo Stock, StockCandidate Candidate, decimal Volume)>();
             ProgressMax = Universe.Count; Progress = 0;
             const int readBatchSize = 24;
             for (int start = 0; start < Universe.Count; start += readBatchSize)
@@ -333,7 +333,7 @@ public class HomeBase : ComponentBase
                     if (daily.Count >= 130 && (date is null || HistoricalCandles.HasCandleOn(daily, date.Value)))
                         foreach (var candidate in ScannerCoordinator.Scan(stock.Symbol, stock.Name,
                             daily, market, modes, Settings))
-                            found.Add((stock,candidate));
+                            found.Add((stock,candidate,daily[^1].Volume));
                     Progress++; Status = $"分析 {Progress}/{Universe.Count}：{stock.Name}";
                     if (Progress % 100 == 0) StateHasChanged();
                 }
@@ -342,14 +342,14 @@ public class HomeBase : ComponentBase
                 .ToArray();
             var results = candidates.Select(item =>
             {
-                var (stock, candidate) = item;
+                var (stock, candidate, volume) = item;
                 return new ResultRow(stock.Market, stock.Symbol.Split('.')[0], stock.Name,
                     string.Join("+", candidate.MatchedStrategies.Select(m => m.ToString()[0])),
                     candidate.Close, candidate.ChangePercent, candidate.Rsi14,
                     candidate.RelativeStrength20, candidate.DailyConditions,
                     Rank(candidate, candidate.Mode),
                     FormatMacd(candidate.DailyMacdDif, candidate.DailyMacdDea),
-                    FormatKdj(candidate.DailyK, candidate.DailyD, candidate.DailyJ));
+                    FormatKdj(candidate.DailyK, candidate.DailyD, candidate.DailyJ),volume);
             }).ToList();
             Rows = results;
             await JS.InvokeVoidAsync("stockApp.putJson", "latest-results", JsonSerializer.Serialize(Rows));
@@ -419,11 +419,11 @@ public class HomeBase : ComponentBase
     protected async Task ExportExcel()
     {
         var table = new List<IReadOnlyList<string>>();
-        table.Add(new[] { "市場", "代號", "名稱", "策略", "分數", "收盤", "漲跌幅", "RSI", "相對強度20",
+        table.Add(new[] { "市場", "代號", "名稱", "策略", "分數", "收盤", "成交量（股）", "漲跌幅", "RSI", "相對強度20",
             "日K_MACD", "日K_KDJ", "日K原因" });
         table.AddRange(VisibleRows.Select(r => (IReadOnlyList<string>)new[]
         {
-            r.Market,r.Symbol,r.Name,r.Strategy,r.Rank.ToString("F1"),r.Close.ToString(),r.ChangePercent.ToString("F2"),
+            r.Market,r.Symbol,r.Name,r.Strategy,r.Rank.ToString("F1"),r.Close.ToString(),r.Volume?.ToString("F0") ?? "",r.ChangePercent.ToString("F2"),
             r.Rsi.ToString("F1"),r.RelativeStrength.ToString("F1"),r.DailyMacd,r.DailyKdj,r.DailyReason
         }));
         using var memory = new MemoryStream();
@@ -436,7 +436,7 @@ public class HomeBase : ComponentBase
     protected sealed record ResultRow(string Market, string Symbol, string Name, string Strategy,
         decimal Close, double ChangePercent, double Rsi, double RelativeStrength,
         string DailyReason, double Rank,
-        string DailyMacd = "", string DailyKdj = "");
+        string DailyMacd = "", string DailyKdj = "", decimal? Volume = null);
     private static string FormatMacd(double dif, double dea) =>
         double.IsNaN(dif) || double.IsNaN(dea) ? "—" : $"DIF {dif:F3} / DEA {dea:F3}";
     private static string FormatKdj(double k, double d, double j) =>

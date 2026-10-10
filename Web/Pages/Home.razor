@@ -60,8 +60,8 @@
         else
         {
         <section class="card"><h2>候選結果（@VisibleRows.Count）</h2>
-            <div class="table-wrap"><table><thead><tr><th>市場</th><th>代號</th><th>名稱</th><th>策略</th><th>分數</th><th>收盤</th><th>漲跌幅</th><th>RSI</th><th>相對強度20</th><th>日 K MACD</th><th>日 K KDJ</th><th>日 K 原因</th></tr></thead>
-                <tbody>@foreach (var row in VisibleRows) { <tr><td>@row.Market</td><td>@row.Symbol</td><td>@row.Name</td><td>@row.Strategy</td><td>@row.Rank.ToString("F1")</td><td>@row.Close</td><td>@row.ChangePercent.ToString("F2")%</td><td>@row.Rsi.ToString("F1")</td><td>@row.RelativeStrength.ToString("F1")</td><td>@row.DailyMacd</td><td>@row.DailyKdj</td><td>@row.DailyReason</td></tr> }</tbody>
+            <div class="table-wrap"><table><thead><tr><th>市場</th><th>代號</th><th>名稱</th><th>策略</th><th>分數</th><th>收盤</th><th>成交量（股）</th><th>漲跌幅</th><th>RSI</th><th>相對強度20</th><th>日 K MACD</th><th>日 K KDJ</th><th>日 K 原因</th></tr></thead>
+                <tbody>@foreach (var row in VisibleRows) { <tr><td>@row.Market</td><td>@row.Symbol</td><td>@row.Name</td><td>@row.Strategy</td><td>@row.Rank.ToString("F1")</td><td>@row.Close</td><td>@(row.Volume?.ToString("N0") ?? "—")</td><td>@row.ChangePercent.ToString("F2")%</td><td>@row.Rsi.ToString("F1")</td><td>@row.RelativeStrength.ToString("F1")</td><td>@row.DailyMacd</td><td>@row.DailyKdj</td><td>@row.DailyReason</td></tr> }</tbody>
             </table></div>
         </section>
         }
