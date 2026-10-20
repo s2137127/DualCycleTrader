@@ -84,7 +84,7 @@ async Task<List<Candle>> GetBars(string symbol, DateTime from, DateTime to)
                 Number(candle,"Low"), Number(candle,"Close"), Number(candle,"Volume")));
         }
     }
-    return bars.OrderBy(c => c.Time).ToList();
+    return HistoricalCandles.NormalizeDaily(bars);
 }
 
 async Task<string?> GetState(string name)
@@ -113,7 +113,8 @@ static double Rank(StockCandidate candidate) => candidate.Mode switch
 };
 
 static string FormatMacd(double dif, double dea) =>
-    double.IsNaN(dif) || double.IsNaN(dea) ? "—" : $"DIF {dif:F3} / DEA {dea:F3}";
+    double.IsNaN(dif) || double.IsNaN(dea) ? "—" :
+    $"DIF {dif:F3} / DEA {dea:F3} / 柱 {dif - dea:F4}";
 static string FormatKdj(double k, double d, double j) =>
     double.IsNaN(k) || double.IsNaN(d) || double.IsNaN(j) ? "—" :
         $"K {k:F1} / D {d:F1} / J {j:F1}";

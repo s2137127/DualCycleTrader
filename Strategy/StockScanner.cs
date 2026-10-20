@@ -10,6 +10,7 @@ public static class StockScanner
         IReadOnlyList<Candle> market, MarketMode mode, StrategySettings s)
     {
         if (mode != MarketMode.B_BullRange) return null;
+        x = HistoricalCandles.NormalizeDaily(x);
         var checks = Conditions(x, s);
         if (checks.Values.Any(passed => !passed)) return null;
         double close = (double)x[^1].Close;
@@ -31,8 +32,16 @@ public static class StockScanner
     public static StockScanDebug DebugScan(string symbol, string name, IReadOnlyList<Candle> x,
         IReadOnlyList<Candle> market, MarketMode mode, StrategySettings s)
     {
+        x = HistoricalCandles.NormalizeDaily(x);
         var checks = Conditions(x, s);
         var macd = Ta.Macd(x, s.DailyMacdFast, s.DailyMacdSlow, s.DailyMacdSignal);
+        var recentMacd = Enumerable.Range(0, Math.Min(4, x.Count)).Select(offset =>
+        {
+            var candle = x[x.Count - 1 - offset];
+            var histogram = Ta.Macd(x.Take(x.Count - offset).ToArray(),
+                s.DailyMacdFast, s.DailyMacdSlow, s.DailyMacdSignal)?.hist;
+            return $"{candle.Time:MM/dd} {histogram?.ToString("F6") ?? "—"}";
+        });
         return new StockScanDebug
         {
             Symbol = symbol, Mode = MarketMode.B_BullRange, Date = x.Count > 0 ? x[^1].Time : default,
@@ -42,7 +51,8 @@ public static class StockScanner
             MacdDif = macd?.dif ?? 0, MacdDea = macd?.dea ?? 0,
             HardConditions = checks,
             Candidate = Scan(symbol, name, x, market, MarketMode.B_BullRange, s),
-            Details = string.Join("、", checks.Select(item => $"{(item.Value ? "✓" : "✗")} {item.Key}"))
+            Details = "MACD 柱值（今天→大前天）：" + string.Join("、", recentMacd) + "\n" +
+                string.Join("、", checks.Select(item => $"{(item.Value ? "✓" : "✗")} {item.Key}"))
         };
     }
 

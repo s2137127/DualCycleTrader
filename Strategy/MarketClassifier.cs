@@ -13,6 +13,7 @@ public static class MarketClassifier
 {
     public static MarketSnapshot Analyze(IReadOnlyList<Candle> x, StrategySettings settings)
     {
+        x = HistoricalCandles.NormalizeDaily(x);
         if (x.Count < 130) throw new InvalidOperationException("大盤日K資料不足。");
         double ma20=Ta.Sma(x,20)!.Value, ma50=Ta.Sma(x,50)!.Value, ma100=Ta.Sma(x,100)!.Value;
         bool up20=ma20 > Ta.Sma(x,20,5)!.Value;

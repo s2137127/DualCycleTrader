@@ -1,5 +1,6 @@
 using System.Text.Json;
 using DualCycleTrader.Models;
+using DualCycleTrader.Strategy;
 using Microsoft.JSInterop;
 
 namespace Web.Services;
@@ -61,8 +62,9 @@ public sealed class FirestoreHistoricalDataStore(IJSRuntime js) : IHistoricalDat
             from.ToString(timeframe=="D"?"yyyy":"yyyyMM"),
             to.ToString(timeframe=="D"?"yyyy":"yyyyMM"),
             from.ToString("yyyy-MM-dd"),to.ToString("yyyy-MM-dd"));
-        var bars=(JsonSerializer.Deserialize<List<Candle>>(json,JsonOptions) ?? new())
-            .Where(c=>c.Time>=from && c.Time<=to).OrderBy(c=>c.Time).ToList();
+        var bars=HistoricalCandles.NormalizeDaily(
+            (JsonSerializer.Deserialize<List<Candle>>(json,JsonOptions) ?? new())
+            .Where(c=>c.Time>=from && c.Time<=to));
         Remember(key,bars);
         return bars;
     }
@@ -83,8 +85,8 @@ public sealed class FirestoreHistoricalDataStore(IJSRuntime js) : IHistoricalDat
             var fetched=JsonSerializer.Deserialize<List<List<Candle>>>(json,JsonOptions) ?? new();
             if(fetched.Count!=missing.Length) throw new InvalidDataException("批次行情數量與股票數量不符。");
             for(int index=0;index<missing.Length;index++)
-                Remember(new(missing[index],timeframe,from,to),fetched[index]
-                    .Where(c=>c.Time>=from && c.Time<=to).OrderBy(c=>c.Time).ToList());
+                Remember(new(missing[index],timeframe,from,to),HistoricalCandles.NormalizeDaily(
+                    fetched[index].Where(c=>c.Time>=from && c.Time<=to)));
         }
         return symbols.Select(symbol=>cache[new(symbol,timeframe,from,to)].Bars).ToList();
     }

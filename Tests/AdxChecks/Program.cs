@@ -101,6 +101,27 @@ Check(!StockScanner.DebugScan("X.TW", "X", oldMacdOnly!, candles,
 Check(!StockScanner.DebugScan("X.TW", "X", mixedSignPattern!, candles,
     MarketMode.B_BullRange, settings).HardConditions[macdKey],
     "all four MACD bars must be negative");
+var holidayPrices = Enumerable.Repeat(7m, 80).Concat(new[]
+    { 8.11m, 8.15m, 8.96m, 8.96m, 9.18m, 8.74m, 9.01m, 8.86m, 8.74m, 9m });
+var holidayBars = Prices(holidayPrices);
+var laterRevision = holidayBars[^2] with { Time = holidayBars[^2].Time.AddHours(4) };
+var duplicateDayBars = holidayBars.Take(holidayBars.Count - 1)
+    .Append(laterRevision).Append(holidayBars[^1]).ToList();
+var normalized = HistoricalCandles.NormalizeDaily(duplicateDayBars);
+Check(normalized.Count == holidayBars.Count && normalized[^2].Time == laterRevision.Time,
+    "latest revision is retained once per trading date");
+var shortMacdSettings = new StrategySettings
+    { DailyMacdFast = 5, DailyMacdSlow = 13, DailyMacdSignal = 5 };
+var rawHist = Enumerable.Range(0, 4).Select(offset => Ta.Macd(
+    duplicateDayBars.Take(duplicateDayBars.Count - offset).ToArray(), 5, 13, 5)!.Value.hist).ToArray();
+Check(rawHist.All(value => value < 0) && rawHist[0] > rawHist[1] &&
+    rawHist[1] <= rawHist[2] && rawHist[2] <= rawHist[3],
+    "duplicate same-day candle would have caused a false MACD match");
+var holidayDebug = StockScanner.DebugScan("X.TW", "X", duplicateDayBars, candles,
+    MarketMode.B_BullRange, shortMacdSettings);
+Check(!holidayDebug.HardConditions[macdKey] &&
+    holidayDebug.Details.Contains($"{laterRevision.Time:MM/dd}"),
+    "scanner uses four unique trading dates and reports their MACD bars");
 Check(debug.Passed == debug.HardConditions.Values.All(value => value),
     "debug agrees with scanner");
 var doji = candles.ToList();

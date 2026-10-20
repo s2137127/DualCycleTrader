@@ -179,8 +179,8 @@ public class HomeBase : ComponentBase
             var fresh = await marketApi!.GetAsync(symbol, timeframe, days);
             token.ThrowIfCancellationRequested();
             await Store.UpsertRangeAsync(symbol, timeframe, fresh);
-            existing = existing.Concat(fresh).GroupBy(c => c.Time).Select(g => g.Last())
-                .OrderBy(c => c.Time).Where(c => c.Time >= from).ToList();
+            existing = HistoricalCandles.NormalizeDaily(existing.Concat(fresh)
+                .Where(c => c.Time >= from));
         }
         return existing;
     }
@@ -194,9 +194,8 @@ public class HomeBase : ComponentBase
         var fresh = await marketApi!.GetAsync(symbol, "D", fetchDays);
         token.ThrowIfCancellationRequested();
         if (fresh.Count > 0) await Store.UpsertRangeAsync(symbol, "D", fresh);
-        return cached.Concat(fresh).Where(c => c.Time >= from && c.Time <= to)
-            .GroupBy(c => c.Time).Select(group => group.Last())
-            .OrderBy(c => c.Time).ToList();
+        return HistoricalCandles.NormalizeDaily(cached.Concat(fresh)
+            .Where(c => c.Time >= from && c.Time <= to));
     }
 
     protected async Task UpdateData()
@@ -507,7 +506,8 @@ public class HomeBase : ComponentBase
         string DailyReason, double Rank,
         string DailyMacd = "", string DailyKdj = "", decimal? Volume = null);
     private static string FormatMacd(double dif, double dea) =>
-        double.IsNaN(dif) || double.IsNaN(dea) ? "—" : $"DIF {dif:F3} / DEA {dea:F3}";
+        double.IsNaN(dif) || double.IsNaN(dea) ? "—" :
+        $"DIF {dif:F3} / DEA {dea:F3} / 柱 {dif - dea:F4}";
     private static string FormatKdj(double k, double d, double j) =>
         double.IsNaN(k) || double.IsNaN(d) || double.IsNaN(j) ? "—" :
         $"K {k:F1} / D {d:F1} / J {j:F1}";

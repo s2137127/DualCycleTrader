@@ -1,5 +1,6 @@
 using System.Text.Json;
 using DualCycleTrader.Models;
+using DualCycleTrader.Strategy;
 
 namespace DualCycleTrader.Data;
 
@@ -99,7 +100,8 @@ public sealed class CachedMarketDataProvider : IMarketDataProvider
         try
         {
             if (!File.Exists(path)) return new();
-            return JsonSerializer.Deserialize<List<Candle>>(File.ReadAllText(path)) ?? new();
+            return HistoricalCandles.NormalizeDaily(
+                JsonSerializer.Deserialize<List<Candle>>(File.ReadAllText(path)) ?? new());
         }
         catch { return new(); }
     }
@@ -116,11 +118,7 @@ public sealed class CachedMarketDataProvider : IMarketDataProvider
     }
 
     private static List<Candle> Merge(IEnumerable<Candle> oldBars, IEnumerable<Candle> newBars)
-        => oldBars.Concat(newBars)
-                  .GroupBy(x => x.Time)
-                  .Select(g => g.Last())
-                  .OrderBy(x => x.Time)
-                  .ToList();
+        => HistoricalCandles.NormalizeDaily(oldBars.Concat(newBars));
 
     private static bool HasToday(IReadOnlyList<Candle> candles)
         => candles.Count > 0 && candles[^1].Time.Date >= DateTime.Today;
