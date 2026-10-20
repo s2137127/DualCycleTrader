@@ -210,17 +210,18 @@ window.stockApp = {
         saveRevision(uid, revision);
         dataChanged = false;
     },
-    async getCandles(symbol, timeframe, fromMonth, toMonth) {
+    async getCandles(symbol, timeframe, fromMonth, toMonth, fromDate, toDate) {
         if (timeframe !== 'D') throw new Error('Only daily candles are supported');
         const periods = monthsBetween(fromMonth, toMonth);
         const groups = await Promise.all(periods.map(async month => {
             const key = cacheKey(symbol, timeframe, month);
             return loadBars(symbol, timeframe, month, await cachedBars(key));
         }));
-        const all = groups.flat();
+        const all = groups.flat().filter(bar => bar.Time.slice(0, 10) >= fromDate &&
+            bar.Time.slice(0, 10) <= toDate);
         return JSON.stringify(all.sort((a, b) => a.Time.localeCompare(b.Time)));
     },
-    async getCandlesBatch(symbols, timeframe, fromMonth, toMonth) {
+    async getCandlesBatch(symbols, timeframe, fromMonth, toMonth, fromDate, toDate) {
         if (timeframe !== 'D') throw new Error('Only daily candles are supported');
         const periods = monthsBetween(fromMonth, toMonth);
         const entries = symbols.flatMap(symbol => periods.map(month => ({ symbol, month })));
@@ -234,7 +235,8 @@ window.stockApp = {
             ? [[cacheKey(symbol, timeframe, month), groups[index]]] : []));
         const result = [];
         for (let index = 0; index < symbols.length; index++) {
-            const bars = groups.slice(index * periods.length, (index + 1) * periods.length).flat();
+            const bars = groups.slice(index * periods.length, (index + 1) * periods.length).flat()
+                .filter(bar => bar.Time.slice(0, 10) >= fromDate && bar.Time.slice(0, 10) <= toDate);
             result.push(bars.sort((a, b) => a.Time.localeCompare(b.Time)));
         }
         return JSON.stringify(result);

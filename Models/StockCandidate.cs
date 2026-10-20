@@ -8,7 +8,7 @@ public sealed class StockCandidate
     public string StrategyType => Mode switch
     {
         MarketMode.A_BullTrend => "A 短線突破",
-        MarketMode.B_BullRange => "B 短線回檔",
+        MarketMode.B_BullRange => "B 個股篩選",
         MarketMode.C_BearRange => "C 抗跌型",
         MarketMode.E_Transition => "E 觀察型",
         _ => "無"

@@ -82,9 +82,9 @@ public sealed class MainForm : Form
         _backtestDate.MinDate=DateTime.Today.AddMonths(-6);
         _backtestDate.MaxDate=DateTime.Today.AddDays(-1);
         _backtestDate.Value=_backtestDate.MaxDate;
-        _resultFilter.Items.AddRange(new object[]{"全部候選","A 突破","B 回檔","C 抗跌"});
+        _resultFilter.Items.AddRange(new object[]{"全部候選"});
         _resultFilter.SelectedIndex=0;
-        _debugMode.Items.AddRange(new object[]{"A","B"});
+        _debugMode.Items.AddRange(new object[]{"B"});
         _debugMode.SelectedIndex=0;
 
         var top=new TableLayoutPanel{Dock=DockStyle.Top,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,Padding=new Padding(12),ColumnCount=1,RowCount=7};
@@ -92,10 +92,7 @@ public sealed class MainForm : Form
         for(int i=0;i<7;i++) top.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         var modeRow=new FlowLayoutPanel{Dock=DockStyle.Fill,AutoSize=true,WrapContents=true};
         modeRow.Controls.Add(_mode);
-        modeRow.Controls.Add(new Label{Text="模擬模式：",AutoSize=true,Padding=new Padding(18,8,0,0)});
-        modeRow.Controls.Add(_simulationMode);
-        modeRow.Controls.Add(new Label{Text="結果篩選：",AutoSize=true,Padding=new Padding(12,8,0,0)});
-        modeRow.Controls.Add(_resultFilter);
+        modeRow.Controls.Add(new Label{Text="個股一律依 B 條件篩選；大盤判別僅供參考。",AutoSize=true,Padding=new Padding(18,8,0,0)});
         var settingsRow=new FlowLayoutPanel{Dock=DockStyle.Fill,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=true,Margin=new Padding(0,4,0,4)};
         settingsRow.Controls.Add(new Label{Text="日K RSI:",AutoSize=true,Padding=new Padding(0,7,0,0)});
         settingsRow.Controls.Add(_dailyRsi);
@@ -109,7 +106,7 @@ public sealed class MainForm : Form
 
         var buttons=new FlowLayoutPanel{Dock=DockStyle.Fill,AutoSize=true,AutoSizeMode=AutoSizeMode.GrowAndShrink,WrapContents=true,Margin=new Padding(0,4,0,4)};
         buttons.Controls.Add(_updateData); buttons.Controls.Add(_reanalyze);
-        buttons.Controls.Add(_debugSymbol); buttons.Controls.Add(_debugMode); buttons.Controls.Add(_debugScan);
+        buttons.Controls.Add(_debugSymbol); buttons.Controls.Add(_debugScan);
         buttons.Controls.Add(new Label{Text="回測收 K 日（近半年）：",AutoSize=true,Padding=new Padding(10,10,0,0)});
         buttons.Controls.Add(_backtestDate); buttons.Controls.Add(_backtest);
         buttons.Controls.Add(_exportExcel); buttons.Controls.Add(_cancel); buttons.Controls.Add(_progress);
@@ -187,7 +184,7 @@ public sealed class MainForm : Form
         if(daily.Count==0 && info is null && !raw.Contains('.'))
         { symbol=raw+".TWO"; daily=_data.GetCachedDaily(symbol); }
         var market=_data.GetCachedDaily("^TWII");
-        var mode=_debugMode.SelectedIndex==1?MarketMode.B_BullRange:MarketMode.A_BullTrend;
+        var mode=MarketMode.B_BullRange;
         var result=StockScanner.DebugScan(symbol,info?.Name??symbol,daily,market,mode,_settings);
         MessageBox.Show($"{symbol}　{result.Date:yyyy/MM/dd}　{(result.Passed?"入選":"淘汰")}\r\n"+
             $"分數 {result.Score:F1}\r\n\r\n"+
@@ -305,8 +302,8 @@ public sealed class MainForm : Form
             _actualMarketMode=snap.Mode;
             var state=historicalDate is null ? _tradingModes.Evaluate(market)
                 : _tradingModes.EvaluateHistorical(market,historicalDate.Value);
-            var simulation=(_simulationMode.SelectedItem as ModeOption)?.Mode;
-            var scannerModes=ScannerCoordinator.ActiveScanners(state.ConfirmedTradingMode,_settings,simulation);
+            MarketMode? simulation=null;
+            var scannerModes=ScannerCoordinator.ActiveScanners(state.ConfirmedTradingMode,_settings);
             string dateLabel=historicalDate is null ? "今日" : historicalDate.Value.ToString("yyyy/MM/dd 收 K");
             _mode.Text=$"{dateLabel}市場：{ModeDisplay(snap.Mode)}\r\n{(historicalDate is null ? "目前" : "當時")}交易模式：{TradingModeText(state.ConfirmedTradingMode)}";
             _market.Text=$"MA20 {(snap.Ma20Up?"↑":"↓")}   MA50 {(snap.Ma50Up?"↑":"↓")}   MA100 {(snap.Ma100Up?"↑":"↓")}   ADX {snap.Adx:F1}   +DI {snap.PlusDi:F1}   -DI {snap.MinusDi:F1}   RSI({_settings.DailyRsiPeriod}) {snap.Rsi:F1}";
@@ -337,7 +334,7 @@ public sealed class MainForm : Form
                     var daily=historicalDate is null ? cachedDaily
                         : HistoricalCandles.DailyAtClose(cachedDaily,historicalDate.Value);
                     if(historicalDate is not null &&
-                        (!HistoricalCandles.HasCandleOn(daily,historicalDate.Value) || daily.Count<130))
+                        !HistoricalCandles.HasCandleOn(daily,historicalDate.Value))
                     {
                         missingDaily++;
                         continue;
@@ -580,14 +577,14 @@ public sealed class MainForm : Form
     {
         int required=Math.Max(1,_settings.MarketRegimeConfirmationDays);
         string confirmation=$"模式確認：{ModeDisplay(state.CandidateMarketRegime)} {Math.Min(state.CandidateRegimeDays,required)}/{required} 日";
-        _modeContext.Text=simulation is null ? confirmation
+        _modeContext.Text=simulation is null ? $"{confirmation}\r\n大盤模式僅供參考；個股一律依 B 條件篩選。"
             : $"{confirmation}\r\n目前僅顯示 {ScannerModeText(simulation.Value)} 模擬候選股；真實交易模式不變。";
         _modeContext.ForeColor=simulation is null?Color.DarkSlateGray:Color.DarkOrange;
     }
 
     private static string TradingModeText(TradingMode mode)=>mode switch{
-        TradingMode.BullishAB=>"🟡 多方結構（A+B）",TradingMode.BearRangeC=>"🟠 空方震盪（C）",
-        TradingMode.BearTrendD=>"🔴 空方趨勢（停止新多單）",TradingMode.TransitionE=>"⚠️ 過渡觀察（E）",
+        TradingMode.BullishAB=>"🟡 多方結構",TradingMode.BearRangeC=>"🟠 空方震盪",
+        TradingMode.BearTrendD=>"🔴 空方趨勢",TradingMode.TransitionE=>"⚠️ 過渡觀察",
         _=>"初始化中"
     };
 
@@ -598,7 +595,7 @@ public sealed class MainForm : Form
     };
 
     private static string ScannerModeText(MarketMode m)=>m switch{
-        MarketMode.A_BullTrend=>"A 突破型",MarketMode.B_BullRange=>"B 回檔型",
+        MarketMode.A_BullTrend=>"A 突破型",MarketMode.B_BullRange=>"B 個股篩選",
         MarketMode.C_BearRange=>"C 抗跌型",MarketMode.D_BearTrend=>"D 空手",
         MarketMode.E_Transition=>"E 觀察型",_=>"未知"
     };

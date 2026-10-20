@@ -26,23 +26,15 @@ public static class StrategyDescriptions
             """,
 
         MarketMode.B_BullRange => $"""
-            B 回檔型（確認多方結構下的候選策略）
+            B 個股篩選（不受大盤判別影響）
 
-            目的
-            多頭結構仍在，但不追高，等待強勢股回檔。
-
-            日 K 主要條件
+            日 K 條件（全部符合）
             • 當日收紅 K（收盤 > 開盤）
-            • RSI(5) < {s.Rsi5UpperLimit:0.##}，且今日 RSI(5) 高於昨日
-            • 股價 > MA{s.BullishMaShortPeriod} > MA{s.BullishMaMediumPeriod}
-            • MA{s.BullishMaShortPeriod}、MA{s.BullishMaMediumPeriod} 向上
-            • 前 20 日高點回檔 {s.PullbackMinPercent:0.##}～{s.PullbackMaxPercent:0.##}%
-            • RSI({s.DailyRsiPeriod}) 介於 40～55
-            • MACD 負柱縮短
-            • 回檔成交量低於 20 日均量
-
-            備註
-            原始策略提及布林通道；目前選股程式未使用 BB 作為判斷條件。
+            • MACD({s.DailyMacdFast},{s.DailyMacdSlow},{s.DailyMacdSignal}) 當日與昨日均為負柱，且當日負柱縮短
+            • 股價 > MA5 > MA20
+            • MA5、MA20 均高於前一日
+            • RSI({s.DailyRsiPeriod}) 今天 > 昨天，昨天 ≤ 前天 ≤ 大前天（下滑或持平後剛上翹）
+            • 個股 +DI > -DI
             """,
 
         MarketMode.C_BearRange => $"""

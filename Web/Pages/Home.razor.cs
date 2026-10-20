@@ -26,8 +26,8 @@ public class HomeBase : ComponentBase
     protected string ImportErrorDetails = "";
     protected string Simulation = "", Filter = "全部";
     protected string MacdPeriodsText = "12,26,9";
-    protected string GuideMode = "A";
-    protected string DebugSymbol = "", DebugMode = "A", DebugText = "";
+    protected string GuideMode = "B";
+    protected string DebugSymbol = "", DebugMode = "B", DebugText = "";
     protected DateTime HistoricalDate = DateTime.Today.AddDays(-1);
     protected StrategySettings Settings = new();
     protected List<StockInfo> Universe = new();
@@ -44,12 +44,7 @@ public class HomeBase : ComponentBase
         "A" => r.Strategy.Contains('A'), "B" => r.Strategy.Contains('B'),
         "C" => r.Strategy.Contains('C'), _ => true
     }).ToList();
-    protected string GuideDescription => StrategyDescriptions.For(GuideMode switch
-    {
-        "B" => MarketMode.B_BullRange, "C" => MarketMode.C_BearRange,
-        "D" => MarketMode.D_BearTrend, "E" => MarketMode.E_Transition,
-        _ => MarketMode.A_BullTrend
-    }, Settings);
+    protected string GuideDescription => StrategyDescriptions.For(MarketMode.B_BullRange, Settings);
     protected string ExitRules => StrategyDescriptions.ExitRules(Settings);
 
     protected override async Task OnInitializedAsync()
@@ -59,7 +54,7 @@ public class HomeBase : ComponentBase
             var config = await Http.GetFromJsonAsync<Config>("firebase-config.json", jsonOptions);
             if (config is null || string.IsNullOrWhiteSpace(config.ProjectId) ||
                 string.IsNullOrWhiteSpace(config.MarketApiBaseUrl)) return;
-            await JS.InvokeVoidAsync("import", "./js/stock-app.js?v=20261010-2");
+            await JS.InvokeVoidAsync("import", "./js/stock-app.js?v=20261020-b");
             await JS.InvokeVoidAsync("stockApp.initialize", new
             {
                 apiKey = config.ApiKey, authDomain = config.AuthDomain,
@@ -84,9 +79,8 @@ public class HomeBase : ComponentBase
         MacdPeriodsText = $"{Settings.DailyMacdFast},{Settings.DailyMacdSlow},{Settings.DailyMacdSignal}";
         value = await JS.InvokeAsync<string?>("stockApp.getJson", "universe");
         if (value is not null) Universe = JsonSerializer.Deserialize<List<StockInfo>>(value, jsonOptions) ?? new();
-        value = await JS.InvokeAsync<string?>("stockApp.getJson", "latest-results");
-        if (value is not null) Rows = JsonSerializer.Deserialize<List<ResultRow>>(value, jsonOptions) ?? new();
-        Status = $"已載入 {Universe.Count} 檔股票清單、{Rows.Count} 筆上次分析結果。";
+        Rows.Clear();
+        Status = $"已載入 {Universe.Count} 檔股票清單；請重新分析以套用 B 條件。";
     }
 
     protected async Task SaveSettings()
@@ -100,12 +94,6 @@ public class HomeBase : ComponentBase
                 macdFast < 2 || macdFast > 100 || macdSlow <= macdFast || macdSlow > 150 ||
                 macdSignal < 2 || macdSignal > 100)
                 throw new InvalidOperationException("MACD 請輸入「快,慢,訊號」，例如 12,26,9；慢線週期須大於快線。");
-            if (Settings.BullishMaShortPeriod < 2 || Settings.BullishMaShortPeriod > 100 ||
-                Settings.BullishMaMediumPeriod <= Settings.BullishMaShortPeriod ||
-                Settings.BullishMaMediumPeriod > 150 ||
-                Settings.BullishMaLongPeriod <= Settings.BullishMaMediumPeriod ||
-                Settings.BullishMaLongPeriod > 300)
-                throw new InvalidOperationException("A/B 均線週期需依序遞增，範圍分別為 2～100、3～150、4～300。");
             Settings.DailyMacdFast = macdFast;
             Settings.DailyMacdSlow = macdSlow;
             Settings.DailyMacdSignal = macdSignal;
@@ -164,16 +152,13 @@ public class HomeBase : ComponentBase
             var today = TaiwanToday();
             var daily = await Store.GetAsync(stock.Symbol, "D", today.AddDays(-550), today.AddDays(1));
             var market = await Store.GetAsync("^TWII", "D", today.AddDays(-550), today.AddDays(1));
-            var mode = DebugMode == "B" ? MarketMode.B_BullRange : MarketMode.A_BullTrend;
+            var mode = MarketMode.B_BullRange;
             var result = StockScanner.DebugScan(stock.Symbol, stock.Name, daily, market, mode, Settings);
             DebugText = $"{stock.Symbol} {stock.Name}　{result.Date:yyyy/MM/dd}　{(result.Passed ? "入選" : "淘汰")}\n" +
-                $"Close {result.Close:F2}｜MA10 {result.Ma10:F2}｜MA{Settings.BullishMaShortPeriod} {result.Ma20:F2}｜MA{Settings.BullishMaMediumPeriod} {result.Ma50:F2}｜MA{Settings.BullishMaLongPeriod} {result.Ma100:F2}\n" +
-                $"RSI14 {result.Rsi14:F1}｜日K RSI6 {result.DailyRsi6:F1}｜MACD DIF {result.MacdDif:F3} / DEA {result.MacdDea:F3}\n" +
-                $"成交量 {result.Volume:F0}｜20 日均量 {result.AverageVolume20:F0}｜量比 {result.VolumeRatio:F2}｜相對強度 {result.RelativeStrength20:F1}%\n" +
-                $"近期高點 {result.RecentHigh:F2}｜距突破 {result.DistanceToBreakoutPercent:F1}%｜回檔 {result.PullbackPercent:F1}% / {result.PullbackDays} 日\n" +
-                $"前段強勢 {(result.PriorStrength ? "PASS" : "FAIL")}（{result.PriorStrengthGainPercent:F1}%）｜支撐 {result.Support:F2}（距離 {result.SupportDistancePercent:F1}%）｜回檔量比 {result.PullbackVolumeRatio:F2}\n" +
+                $"Close {result.Close:F2}｜MA5 {result.Ma20:F2}｜MA20 {result.Ma50:F2}\n" +
+                $"RSI({Settings.DailyRsiPeriod}) {result.Rsi14:F1}｜MACD DIF {result.MacdDif:F3} / DEA {result.MacdDea:F3}\n" +
                 string.Join("\n", result.HardConditions.Select(item => $"{(item.Value ? "✓" : "✗")} {item.Key}")) +
-                $"\n分數 {result.Score:F1}\n{result.Details}";
+                $"\n{result.Details}";
         }
         catch (Exception ex) { Error = ex.Message; }
     }
@@ -280,14 +265,16 @@ public class HomeBase : ComponentBase
         Analyzing = true;
         var timer = Stopwatch.StartNew();
         TimeSpan dailyReadTime = TimeSpan.Zero;
+        TimeSpan scanTime = TimeSpan.Zero;
         try
         {
             var token = cancellation!.Token;
             if (Universe.Count == 0) { Status = "請先更新資料。"; return; }
             await SyncDataRevision();
             DateTime today = TaiwanToday();
+            DateTime analysisEnd = date?.Date ?? today;
             var readStarted = timer.Elapsed;
-            var allMarket = await Store.GetAsync("^TWII", "D", today.AddDays(-550), today.AddDays(1));
+            var allMarket = await Store.GetAsync("^TWII", "D", analysisEnd.AddDays(-550), analysisEnd.AddDays(1));
             dailyReadTime += timer.Elapsed - readStarted;
             var market = date is null ? allMarket : HistoricalCandles.DailyAtClose(allMarket, date.Value);
             if (market.Count < 130) { Status = "大盤日 K 不足，請先更新資料。"; return; }
@@ -297,13 +284,7 @@ public class HomeBase : ComponentBase
             var lastClosed = date ?? (DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(8)).TimeOfDay >=
                 new TimeSpan(13, 35, 0) ? today : today.AddDays(-1));
             var state = new TradingModeManager(Settings, "unused-web-state").EvaluateHistorical(market, lastClosed);
-            MarketMode? selected = Simulation switch
-            {
-                "A" => MarketMode.A_BullTrend, "B" => MarketMode.B_BullRange,
-                "C" => MarketMode.C_BearRange, "D" => MarketMode.D_BearTrend,
-                "E" => MarketMode.E_Transition, _ => null
-            };
-            var modes = ScannerCoordinator.ActiveScanners(state.ConfirmedTradingMode, Settings, selected);
+            var modes = ScannerCoordinator.ActiveScanners(state.ConfirmedTradingMode, Settings);
             MarketText = $"{(date is null ? "目前" : date.Value.ToString("yyyy/MM/dd"))}市場：{snapshot.Mode}　交易模式：{state.ConfirmedTradingMode}";
             MarketDetail = $"MA20 {(snapshot.Ma20Up ? "↑" : "↓")}　MA50 {(snapshot.Ma50Up ? "↑" : "↓")}　MA100 {(snapshot.Ma100Up ? "↑" : "↓")}　ADX {snapshot.Adx:F1}　RSI {snapshot.Rsi:F1}";
             if (modes.Count == 0)
@@ -315,28 +296,30 @@ public class HomeBase : ComponentBase
             }
             var found = new List<(StockInfo Stock, StockCandidate Candidate, decimal Volume)>();
             ProgressMax = Universe.Count; Progress = 0;
-            const int readBatchSize = 24;
+            const int readBatchSize = 64;
             for (int start = 0; start < Universe.Count; start += readBatchSize)
             {
                 token.ThrowIfCancellationRequested();
                 var batch = Universe.Skip(start).Take(readBatchSize).ToArray();
                 readStarted = timer.Elapsed;
                 var dailyBars = await Store.GetManyAsync(batch.Select(stock => stock.Symbol).ToArray(),
-                    "D", today.AddDays(-550), today.AddDays(1));
+                    "D", analysisEnd.AddDays(-550), analysisEnd.AddDays(1));
                 dailyReadTime += timer.Elapsed - readStarted;
+                var scanStarted = timer.Elapsed;
                 for (int index = 0; index < batch.Length; index++)
                 {
                     token.ThrowIfCancellationRequested();
                     var stock = batch[index];
                     var daily = dailyBars[index];
                     if (date is not null) daily = HistoricalCandles.DailyAtClose(daily, date.Value);
-                    if (daily.Count >= 130 && (date is null || HistoricalCandles.HasCandleOn(daily, date.Value)))
+                    if (daily.Count > 0 && (date is null || HistoricalCandles.HasCandleOn(daily, date.Value)))
                         foreach (var candidate in ScannerCoordinator.Scan(stock.Symbol, stock.Name,
                             daily, market, modes, Settings))
                             found.Add((stock,candidate,daily[^1].Volume));
                     Progress++; Status = $"分析 {Progress}/{Universe.Count}：{stock.Name}";
                     if (Progress % 100 == 0) StateHasChanged();
                 }
+                scanTime += timer.Elapsed - scanStarted;
             }
             var candidates = found.OrderByDescending(item => Rank(item.Candidate,item.Candidate.Mode))
                 .ToArray();
@@ -353,7 +336,7 @@ public class HomeBase : ComponentBase
             }).ToList();
             Rows = results;
             await JS.InvokeVoidAsync("stockApp.putJson", "latest-results", JsonSerializer.Serialize(Rows));
-            Status = $"分析完成：{Rows.Count} 筆候選結果；耗時 {timer.Elapsed.TotalSeconds:F1} 秒（日 K 載入 {dailyReadTime.TotalSeconds:F1} 秒）。";
+            Status = $"分析完成：{Rows.Count} 筆候選結果；耗時 {timer.Elapsed.TotalSeconds:F1} 秒（日 K 載入 {dailyReadTime.TotalSeconds:F1} 秒、掃描 {scanTime.TotalSeconds:F1} 秒）。";
         }
         catch (OperationCanceledException) { Status = "已停止分析。"; }
         catch (Exception ex) { Error = ex.Message; Status = "分析失敗。"; }

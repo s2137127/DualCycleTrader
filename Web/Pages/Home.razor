@@ -18,21 +18,13 @@
                 <button disabled="@(!Busy)" class="secondary" @onclick="Cancel">停止</button>
             </div>
             <div class="controls">
-                <label>模擬模式<select @bind="Simulation"><option value="">自動</option><option value="A">A 多方趨勢</option><option value="B">B 多方震盪</option><option value="C">C 空方震盪</option><option value="D">D 空方趨勢</option><option value="E">E 過渡盤</option></select></label>
-                <label>結果篩選<select @bind="Filter"><option value="全部">全部候選</option><option value="A">A 突破</option><option value="B">B 回檔</option><option value="C">C 抗跌</option></select></label>
+                <span>個股一律依 B 條件篩選；大盤判別僅供參考。</span>
                 <button class="secondary" disabled="@(Rows.Count==0)" @onclick="ExportExcel">匯出 Excel</button>
             </div>
             <details><summary>策略設定</summary>
                 <div class="settings-grid">
                     <label>日 K RSI<input type="number" @bind="Settings.DailyRsiPeriod" /></label>
-                    <label>A/B RSI(5) 上限（101 不限制）<input type="number" min="1" max="101" step="1" @bind="Settings.Rsi5UpperLimit" /></label>
                     <label>日 K MACD（快,慢,訊號）<input type="text" placeholder="12,26,9" @bind="MacdPeriodsText" /></label>
-                    <label>A/B 短均線週期<input type="number" min="2" max="100" @bind="Settings.BullishMaShortPeriod" /></label>
-                    <label>A/B 中均線週期<input type="number" min="3" max="150" @bind="Settings.BullishMaMediumPeriod" /></label>
-                    <label>A 長均線週期<input type="number" min="4" max="300" @bind="Settings.BullishMaLongPeriod" /></label>
-                    <label>A 強量倍數<input type="number" step="0.1" @bind="Settings.BreakoutStrongVolumeRatio" /></label>
-                    <label>B 回檔下限 %<input type="number" step="0.1" @bind="Settings.PullbackMinPercent" /></label>
-                    <label>B 回檔上限 %<input type="number" step="0.1" @bind="Settings.PullbackMaxPercent" /></label>
                 </div><button @onclick="SaveSettings">儲存設定</button>
             </details>
             <details><summary>匯入舊版行情 JSON</summary><p>選取 Data/MarketCache 中的 *_D.json；已存在的 K 棒會略過。</p><InputFile OnChange="ImportFiles" multiple /></details>
@@ -42,13 +34,12 @@
             @if (MarketText.Length>0) { <h2>@MarketText</h2><p>@MarketDetail</p> }
         </section>
         <section class="card"><details><summary>各策略條件與出場規則</summary>
-            <label>策略<select @bind="GuideMode"><option value="A">A 突破</option><option value="B">B 回檔</option><option value="C">C 抗跌</option><option value="D">D 空手</option><option value="E">E 觀察</option></select></label>
+            <label>策略：B 個股篩選</label>
             <pre class="guide">@GuideDescription</pre><pre class="guide">@ExitRules</pre>
         </details></section>
-        <section class="card"><details><summary>單股 A/B Scanner Debug</summary>
+        <section class="card"><details><summary>單股 B Scanner Debug</summary>
             <div class="controls">
                 <label>股票代號<input @bind="DebugSymbol" placeholder="例如 2305" /></label>
-                <label>策略<select @bind="DebugMode"><option value="A">A 短線突破</option><option value="B">B 短線回檔</option></select></label>
                 <button disabled="@Busy" @onclick="DebugOneStock">檢查日 K</button>
             </div>
             @if (DebugText.Length > 0) { <pre class="guide">@DebugText</pre> }

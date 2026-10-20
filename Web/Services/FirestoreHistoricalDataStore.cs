@@ -59,7 +59,8 @@ public sealed class FirestoreHistoricalDataStore(IJSRuntime js) : IHistoricalDat
         if(TryGetCached(key,out var cached)) return cached;
         string json=await js.InvokeAsync<string>("stockApp.getCandles",symbol,timeframe,
             from.ToString(timeframe=="D"?"yyyy":"yyyyMM"),
-            to.ToString(timeframe=="D"?"yyyy":"yyyyMM"));
+            to.ToString(timeframe=="D"?"yyyy":"yyyyMM"),
+            from.ToString("yyyy-MM-dd"),to.ToString("yyyy-MM-dd"));
         var bars=(JsonSerializer.Deserialize<List<Candle>>(json,JsonOptions) ?? new())
             .Where(c=>c.Time>=from && c.Time<=to).OrderBy(c=>c.Time).ToList();
         Remember(key,bars);
@@ -77,7 +78,8 @@ public sealed class FirestoreHistoricalDataStore(IJSRuntime js) : IHistoricalDat
         {
             string json=await js.InvokeAsync<string>("stockApp.getCandlesBatch",missing,timeframe,
                 from.ToString(timeframe=="D"?"yyyy":"yyyyMM"),
-                to.ToString(timeframe=="D"?"yyyy":"yyyyMM"));
+                to.ToString(timeframe=="D"?"yyyy":"yyyyMM"),
+                from.ToString("yyyy-MM-dd"),to.ToString("yyyy-MM-dd"));
             var fetched=JsonSerializer.Deserialize<List<List<Candle>>>(json,JsonOptions) ?? new();
             if(fetched.Count!=missing.Length) throw new InvalidDataException("批次行情數量與股票數量不符。");
             for(int index=0;index<missing.Length;index++)
