@@ -185,6 +185,20 @@ public class HomeBase : ComponentBase
         return existing;
     }
 
+    private async Task<List<Candle>> BackfillHistoricalCandles(string symbol, DateTime date,
+        DateTime from, DateTime to, int fetchDays, int requiredBars,
+        List<Candle> cached, CancellationToken token)
+    {
+        if (cached.Count >= requiredBars && HistoricalCandles.HasCandleOn(cached, date))
+            return cached;
+        var fresh = await marketApi!.GetAsync(symbol, "D", fetchDays);
+        token.ThrowIfCancellationRequested();
+        if (fresh.Count > 0) await Store.UpsertRangeAsync(symbol, "D", fresh);
+        return cached.Concat(fresh).Where(c => c.Time >= from && c.Time <= to)
+            .GroupBy(c => c.Time).Select(group => group.Last())
+            .OrderBy(c => c.Time).ToList();
+    }
+
     protected async Task UpdateData()
     {
         Begin();
@@ -269,17 +283,43 @@ public class HomeBase : ComponentBase
         try
         {
             var token = cancellation!.Token;
-            if (Universe.Count == 0) { Status = "請先更新資料。"; return; }
+            if (Universe.Count == 0)
+            {
+                Status = "取得股票清單..."; StateHasChanged();
+                Universe = await marketApi!.GetUniverseAsync();
+                if (Universe.Count == 0) { Status = "無法取得股票清單。"; return; }
+                await JS.InvokeVoidAsync("stockApp.putJson", "universe", JsonSerializer.Serialize(Universe));
+            }
             await SyncDataRevision();
             DateTime today = TaiwanToday();
             DateTime analysisEnd = date?.Date ?? today;
+            if (analysisEnd > today) { Status = "歷史日期不能晚於今天。"; return; }
+            DateTime from = analysisEnd.AddDays(-550), to = analysisEnd.AddDays(1);
+            int fetchDays = Math.Min(730, Math.Max(365, (today - analysisEnd).Days + 365));
             var readStarted = timer.Elapsed;
-            var allMarket = await Store.GetAsync("^TWII", "D", analysisEnd.AddDays(-550), analysisEnd.AddDays(1));
+            var allMarket = await Store.GetAsync("^TWII", "D", from, to);
+            if (date is not null && (allMarket.Count < 130 ||
+                !HistoricalCandles.HasCandleOn(allMarket, analysisEnd)))
+            {
+                if (analysisEnd < today.AddDays(-730))
+                {
+                    Status = "所選日期的大盤資料不足；行情代理目前只能回補近 730 天，請匯入較早的日 K。";
+                    return;
+                }
+                Status = $"回補 {analysisEnd:yyyy/MM/dd} 的大盤日 K..."; StateHasChanged();
+                allMarket = await BackfillHistoricalCandles("^TWII", analysisEnd,
+                    from, to, fetchDays, 130, allMarket, token);
+            }
             dailyReadTime += timer.Elapsed - readStarted;
             var market = date is null ? allMarket : HistoricalCandles.DailyAtClose(allMarket, date.Value);
-            if (market.Count < 130) { Status = "大盤日 K 不足，請先更新資料。"; return; }
+            if (market.Count < 130)
+            {
+                Status = $"{analysisEnd:yyyy/MM/dd} 大盤日 K 僅 {market.Count} 根，回補後仍不足 130 根。"+
+                    "行情代理最多提供近 730 天；較早日期請匯入歷史日 K。";
+                return;
+            }
             if (date is not null && !HistoricalCandles.HasCandleOn(market, date.Value))
-            { Status = "所選日期不是已儲存的大盤交易日。"; return; }
+            { Status = "所選日期沒有大盤日 K，可能是休市日。"; return; }
             var snapshot = MarketClassifier.Analyze(market, Settings);
             var lastClosed = date ?? (DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(8)).TimeOfDay >=
                 new TimeSpan(13, 35, 0) ? today : today.AddDays(-1));
@@ -295,6 +335,9 @@ public class HomeBase : ComponentBase
                 return;
             }
             var found = new List<(StockInfo Stock, StockCandidate Candidate, decimal Volume)>();
+            int backfilledStocks = 0, failedBackfills = 0, unavailableStocks = 0, insufficientStocks = 0;
+            int requiredStockBars = Math.Max(25, Math.Max(Settings.DailyMacdSlow + Settings.DailyMacdSignal + 1,
+                Settings.DailyRsiPeriod + 4));
             ProgressMax = Universe.Count; Progress = 0;
             const int readBatchSize = 64;
             for (int start = 0; start < Universe.Count; start += readBatchSize)
@@ -303,8 +346,43 @@ public class HomeBase : ComponentBase
                 var batch = Universe.Skip(start).Take(readBatchSize).ToArray();
                 readStarted = timer.Elapsed;
                 var dailyBars = await Store.GetManyAsync(batch.Select(stock => stock.Symbol).ToArray(),
-                    "D", analysisEnd.AddDays(-550), analysisEnd.AddDays(1));
+                    "D", from, to);
                 dailyReadTime += timer.Elapsed - readStarted;
+                if (date is not null)
+                {
+                    var missing = batch.Select((stock, index) => (Stock: stock, Index: index))
+                        .Where(item => dailyBars[item.Index].Count < requiredStockBars ||
+                            !HistoricalCandles.HasCandleOn(dailyBars[item.Index], analysisEnd)).ToArray();
+                    if (analysisEnd < today.AddDays(-730)) unavailableStocks += missing.Length;
+                    else
+                    {
+                        const int backfillBatchSize = 6;
+                        for (int offset = 0; offset < missing.Length; offset += backfillBatchSize)
+                        {
+                            token.ThrowIfCancellationRequested();
+                            var group = missing.Skip(offset).Take(backfillBatchSize).ToArray();
+                            Status = $"回補個股歷史日 K：{start + offset + group.Length}/{Universe.Count}";
+                            StateHasChanged();
+                            var repaired = await Task.WhenAll(group.Select(async item =>
+                            {
+                                try
+                                {
+                                    var bars = await BackfillHistoricalCandles(item.Stock.Symbol, analysisEnd,
+                                        from, to, fetchDays, requiredStockBars, dailyBars[item.Index], token);
+                                    return (item.Index, Bars: bars, Failed: false);
+                                }
+                                catch (OperationCanceledException) { throw; }
+                                catch { return (item.Index, Bars: dailyBars[item.Index], Failed: true); }
+                            }));
+                            foreach (var item in repaired)
+                            {
+                                dailyBars[item.Index] = item.Bars;
+                                if (item.Failed) failedBackfills++;
+                                else backfilledStocks++;
+                            }
+                        }
+                    }
+                }
                 var scanStarted = timer.Elapsed;
                 for (int index = 0; index < batch.Length; index++)
                 {
@@ -312,6 +390,8 @@ public class HomeBase : ComponentBase
                     var stock = batch[index];
                     var daily = dailyBars[index];
                     if (date is not null) daily = HistoricalCandles.DailyAtClose(daily, date.Value);
+                    if (date is not null && (daily.Count < requiredStockBars ||
+                        !HistoricalCandles.HasCandleOn(daily, date.Value))) insufficientStocks++;
                     if (daily.Count > 0 && (date is null || HistoricalCandles.HasCandleOn(daily, date.Value)))
                         foreach (var candidate in ScannerCoordinator.Scan(stock.Symbol, stock.Name,
                             daily, market, modes, Settings))
@@ -336,11 +416,17 @@ public class HomeBase : ComponentBase
             }).ToList();
             Rows = results;
             await JS.InvokeVoidAsync("stockApp.putJson", "latest-results", JsonSerializer.Serialize(Rows));
-            Status = $"分析完成：{Rows.Count} 筆候選結果；耗時 {timer.Elapsed.TotalSeconds:F1} 秒（日 K 載入 {dailyReadTime.TotalSeconds:F1} 秒、掃描 {scanTime.TotalSeconds:F1} 秒）。";
+            Status = $"分析完成：{Rows.Count} 筆候選結果；歷史回補請求 {backfilledStocks} 檔、失敗 {failedBackfills} 檔、仍缺資料 {insufficientStocks} 檔（其中超出回補範圍 {unavailableStocks} 檔）；"+
+                $"耗時 {timer.Elapsed.TotalSeconds:F1} 秒（日 K 載入 {dailyReadTime.TotalSeconds:F1} 秒、掃描 {scanTime.TotalSeconds:F1} 秒）。";
         }
         catch (OperationCanceledException) { Status = "已停止分析。"; }
         catch (Exception ex) { Error = ex.Message; Status = "分析失敗。"; }
-        finally { Analyzing = false; End(); }
+        finally
+        {
+            try { await JS.InvokeVoidAsync("stockApp.publishRevision"); }
+            catch (Exception ex) { Error ??= ex.Message; }
+            Analyzing = false; End();
+        }
     }
 
     protected async Task ImportFiles(InputFileChangeEventArgs args)

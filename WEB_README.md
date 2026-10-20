@@ -62,6 +62,8 @@ npx wrangler deploy
 
 ## 5. 匯入舊資料
 
+選擇「歷史日期分析」時，網頁會先檢查所選日期的大盤與個股日 K；若快取不足，會自動向行情代理回補後再分析。行情代理目前只提供近 730 天的資料，更早日期須先匯入歷史日 K；休市日沒有可回補的當日日 K。
+
 原程式的資料通常在 `bin/Debug/net8.0-windows/Data`，或你平常執行的 Release/publish 目錄旁的 `Data`。先另行保留這些資料，勿刪除；Debug、Release 和 publish 可能各有一份，請挑你實際使用且最新的一份，避免重複匯入。開啟網頁後，在「匯入舊版行情 JSON」分批選取 `Data/MarketCache` 下的 `*_D.json`。也可以選取 `settings.json`、`stock-universe.json`、`market-state.json`。匯入畫面會回報新增、略過及錯誤數；已有的 K 棒不會因匯入而覆寫。一次最多選 5000 個檔案，資料量大時分批或分天匯入。
 
 每股票日 K 使用整份 JSON 檔；`market-state.json` 保存確認模式。網頁以截至回測日的大盤 K 棒重算確認模式；匯入的舊 `market-state.json` 只保留供查核。
