@@ -54,9 +54,10 @@ public static class StockScanner
             return new() { [$"個股日 K 至少 {minimum} 根（目前 {x.Count} 根）"] = false };
         double close = (double)x[^1].Close;
         double ma5 = Ta.Sma(x, 5)!.Value, ma20 = Ta.Sma(x, 20)!.Value;
-        var macd = Ta.Macd(x, s.DailyMacdFast, s.DailyMacdSlow, s.DailyMacdSignal);
-        var priorMacd = Ta.Macd(x.Take(x.Count - 1).ToArray(), s.DailyMacdFast,
-            s.DailyMacdSlow, s.DailyMacdSignal);
+        var macdHist = Enumerable.Range(0, 4)
+            .Select(offset => Ta.Macd(x.Take(x.Count - offset).ToArray(),
+                s.DailyMacdFast, s.DailyMacdSlow, s.DailyMacdSignal)?.hist)
+            .ToArray();
         var adx = Ta.Adx(x);
         var rsi = Enumerable.Range(0, 4)
             .Select(offset => Ta.Rsi(x.Take(x.Count - offset).ToArray(), s.DailyRsiPeriod))
@@ -64,9 +65,10 @@ public static class StockScanner
         return new()
         {
             ["當日收紅 K（收盤 > 開盤）"] = x[^1].Close > x[^1].Open,
-            ["MACD 負柱縮短"] = macd is not null && priorMacd is not null &&
-                macd.Value.hist < 0 && priorMacd.Value.hist < 0 &&
-                macd.Value.hist > priorMacd.Value.hist,
+            ["MACD 負柱今天 > 昨天，昨天 ≤ 前天 ≤ 大前天"] =
+                macdHist.All(value => value is not null) && macdHist[0] < 0 &&
+                macdHist[0] > macdHist[1] && macdHist[1] <= macdHist[2] &&
+                macdHist[2] <= macdHist[3],
             ["股價 > MA5 > MA20"] = close > ma5 && ma5 > ma20,
             ["MA5、MA20 向上（高於前一日）"] = ma5 > Ta.Sma(x, 5, 1) &&
                 ma20 > Ta.Sma(x, 20, 1),

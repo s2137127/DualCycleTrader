@@ -30,7 +30,7 @@ public static class StrategyDescriptions
 
             日 K 條件（全部符合）
             • 當日收紅 K（收盤 > 開盤）
-            • MACD({s.DailyMacdFast},{s.DailyMacdSlow},{s.DailyMacdSignal}) 當日與昨日均為負柱，且當日負柱縮短
+            • MACD({s.DailyMacdFast},{s.DailyMacdSlow},{s.DailyMacdSignal}) 今天仍為負柱，今天柱值 > 昨天，且昨天 ≤ 前天 ≤ 大前天
             • 股價 > MA5 > MA20
             • MA5、MA20 均高於前一日
             • RSI({s.DailyRsiPeriod}) 今天 > 昨天，昨天 ≤ 前天 ≤ 大前天（下滑或持平後剛上翹）
