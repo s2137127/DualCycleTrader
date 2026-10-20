@@ -65,8 +65,8 @@ public static class StockScanner
         return new()
         {
             ["當日收紅 K（收盤 > 開盤）"] = x[^1].Close > x[^1].Open,
-            ["MACD 負柱今天 > 昨天，昨天 ≤ 前天 ≤ 大前天"] =
-                macdHist.All(value => value is not null) && macdHist[0] < 0 &&
+            ["MACD 四天均為負柱，今天 > 昨天，昨天 ≤ 前天 ≤ 大前天"] =
+                macdHist.All(value => value is < 0) &&
                 macdHist[0] > macdHist[1] && macdHist[1] <= macdHist[2] &&
                 macdHist[2] <= macdHist[3],
             ["股價 > MA5 > MA20"] = close > ma5 && ma5 > ma20,

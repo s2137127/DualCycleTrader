@@ -64,9 +64,10 @@ Check(RsiTurnsUp(Enumerable.Repeat(100m, 80).Append(101m)),
     "RSI stays flat then turns up");
 Check(!RsiTurnsUp(Enumerable.Repeat(100m, 80).Concat(new[] { 99m, 100m, 101m, 102m })),
     "RSI already rising is not a fresh turn");
-const string macdKey = "MACD 負柱今天 > 昨天，昨天 ≤ 前天 ≤ 大前天";
-List<Candle>? newMacdPattern = null, oldMacdOnly = null;
-for (int seed = 0; seed < 2000 && (newMacdPattern is null || oldMacdOnly is null); seed++)
+const string macdKey = "MACD 四天均為負柱，今天 > 昨天，昨天 ≤ 前天 ≤ 大前天";
+List<Candle>? newMacdPattern = null, oldMacdOnly = null, mixedSignPattern = null;
+for (int seed = 0; seed < 10000 &&
+    (newMacdPattern is null || oldMacdOnly is null || mixedSignPattern is null); seed++)
 {
     var random = new Random(seed);
     decimal close = 100;
@@ -81,11 +82,15 @@ for (int seed = 0; seed < 2000 && (newMacdPattern is null || oldMacdOnly is null
         series.Take(series.Count - offset).ToArray(), 12, 26, 9)!.Value.hist).ToArray();
     if (hist[0] < 0 && hist[0] > hist[1])
     {
-        if (hist[1] <= hist[2] && hist[2] <= hist[3]) newMacdPattern ??= series;
-        else oldMacdOnly ??= series;
+        if (hist[1] <= hist[2] && hist[2] <= hist[3])
+        {
+            if (hist.All(value => value < 0)) newMacdPattern ??= series;
+            else mixedSignPattern ??= series;
+        }
+        else if (hist.All(value => value < 0)) oldMacdOnly ??= series;
     }
 }
-Check(newMacdPattern is not null && oldMacdOnly is not null,
+Check(newMacdPattern is not null && oldMacdOnly is not null && mixedSignPattern is not null,
     "found deterministic MACD examples");
 Check(StockScanner.DebugScan("X.TW", "X", newMacdPattern!, candles,
     MarketMode.B_BullRange, settings).HardConditions[macdKey],
@@ -93,6 +98,9 @@ Check(StockScanner.DebugScan("X.TW", "X", newMacdPattern!, candles,
 Check(!StockScanner.DebugScan("X.TW", "X", oldMacdOnly!, candles,
     MarketMode.B_BullRange, settings).HardConditions[macdKey],
     "one-day MACD shrinkage without prior decline is rejected");
+Check(!StockScanner.DebugScan("X.TW", "X", mixedSignPattern!, candles,
+    MarketMode.B_BullRange, settings).HardConditions[macdKey],
+    "all four MACD bars must be negative");
 Check(debug.Passed == debug.HardConditions.Values.All(value => value),
     "debug agrees with scanner");
 var doji = candles.ToList();
