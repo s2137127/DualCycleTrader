@@ -345,7 +345,8 @@ public class HomeBase : ComponentBase
                 return;
             }
             var found = new List<(StockInfo Stock, StockCandidate Candidate, decimal Volume)>();
-            int backfilledStocks = 0, failedBackfills = 0, unavailableStocks = 0, insufficientStocks = 0;
+            int backfilledStocks = 0, failedBackfills = 0, unavailableStocks = 0,
+                insufficientStocks = 0, earlierTradingDayStocks = 0;
             int requiredStockBars = Math.Max(25, Math.Max(Settings.DailyMacdSlow + Settings.DailyMacdSignal + 1,
                 Settings.DailyRsiPeriod + 4));
             ProgressMax = Universe.Count; Progress = 0;
@@ -400,9 +401,10 @@ public class HomeBase : ComponentBase
                     var stock = batch[index];
                     var daily = dailyBars[index];
                     if (date is not null) daily = HistoricalCandles.DailyAtClose(daily, date.Value);
-                    if (date is not null && (daily.Count < requiredStockBars ||
-                        !HistoricalCandles.HasCandleOn(daily, date.Value))) insufficientStocks++;
-                    if (daily.Count > 0 && (date is null || HistoricalCandles.HasCandleOn(daily, date.Value)))
+                    if (date is not null && daily.Count < requiredStockBars) insufficientStocks++;
+                    if (date is not null && daily.Count >= requiredStockBars &&
+                        daily[^1].Time.Date < date.Value.Date) earlierTradingDayStocks++;
+                    if (daily.Count > 0 && (date is null || daily.Count >= requiredStockBars))
                         foreach (var candidate in ScannerCoordinator.Scan(stock.Symbol, stock.Name,
                             daily, market, modes, Settings))
                             found.Add((stock,candidate,daily[^1].Volume));
@@ -426,7 +428,7 @@ public class HomeBase : ComponentBase
             }).ToList();
             Rows = results;
             await JS.InvokeVoidAsync("stockApp.putJson", "latest-results", JsonSerializer.Serialize(Rows));
-            Status = $"分析完成：{Rows.Count} 筆候選結果；歷史回補請求 {backfilledStocks} 檔、失敗 {failedBackfills} 檔、仍缺資料 {insufficientStocks} 檔（其中超出回補範圍 {unavailableStocks} 檔）；"+
+            Status = $"分析完成：{Rows.Count} 筆候選結果；歷史回補請求 {backfilledStocks} 檔、失敗 {failedBackfills} 檔、仍缺資料 {insufficientStocks} 檔、使用較早交易日 {earlierTradingDayStocks} 檔、超出回補範圍 {unavailableStocks} 檔；"+
                 $"耗時 {timer.Elapsed.TotalSeconds:F1} 秒（日 K 載入 {dailyReadTime.TotalSeconds:F1} 秒、掃描 {scanTime.TotalSeconds:F1} 秒）。";
         }
         catch (OperationCanceledException) { Status = "已停止分析。"; }

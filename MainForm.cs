@@ -363,26 +363,28 @@ public sealed class MainForm : Form
             {
                 var result=new List<(StockInfo Info,StockCandidate C)>();
                 int missingDaily=0;
+                var fallbackDates=new List<string>();
                 foreach(var s in _latestUniverse)
                 {
                     token.ThrowIfCancellationRequested();
                     var cachedDaily=_data.GetCachedDaily(s.Symbol);
                     var daily=historicalDate is null ? cachedDaily
                         : HistoricalCandles.DailyAtClose(cachedDaily,historicalDate.Value);
-                    if(historicalDate is not null &&
-                        (daily.Count<requiredStockBars ||
-                         !HistoricalCandles.HasCandleOn(daily,historicalDate.Value)))
+                    if(historicalDate is not null && daily.Count<requiredStockBars)
                     {
                         missingDaily++;
                         continue;
                     }
+                    if(historicalDate is not null &&
+                        daily[^1].Time.Date<historicalDate.Value.Date)
+                        fallbackDates.Add($"{s.Symbol.Split('.')[0]}({daily[^1].Time:MM/dd})");
                     if(daily.Count>0)
                     {
                         foreach(var c in ScannerCoordinator.Scan(s.Symbol,s.Name,daily,market,scannerModes,_settings))
                             result.Add((s,c));
                     }
                 }
-                return (result,missingDaily);
+                return (result,missingDaily,fallbackDates);
             },token);
             var found=scan.result;
             _progress.Value=_progress.Maximum;
@@ -415,10 +417,14 @@ public sealed class MainForm : Form
             _gridRows=rows;
             BindGridRows();
             _status.Text=$"{(historicalDate is null ? "今日" : historicalDate.Value.ToString("yyyy/MM/dd")+" 收 K 回測")}：{string.Join("+",scannerModes.Select(ScannerModeText))}，日K符合 {found.Count} 檔。"+
-                (historicalDate is null ? "" : $" 日K資料不足／非當日交易 {scan.missingDaily} 檔。");
-            if(historicalDate is not null && failedBackfills>0)
-                MessageBox.Show($"所選日期 {historicalDate.Value:yyyy/MM/dd} 的日 K 回補失敗："+
-                    $"{failedBackfills} 檔；回補後仍無當日日 K：{scan.missingDaily} 檔",
+                (historicalDate is null ? "" :
+                    $" 歷史日 K 不足 {scan.missingDaily} 檔；使用較早交易日 {scan.fallbackDates.Count} 檔"+
+                    (failedBackfills==0 ? "" : $"；當日日 K 回補失敗 {failedBackfills} 檔")+
+                    (scan.fallbackDates.Count==0 ? "。" :
+                        $"：{string.Join("、",scan.fallbackDates.Take(15))}。"));
+            if(historicalDate is not null && scan.missingDaily>0)
+                MessageBox.Show($"所選日期 {historicalDate.Value:yyyy/MM/dd} 有 {scan.missingDaily} 檔個股"+
+                    "在回補後仍無足夠的歷史日 K。",
                     "歷史資料不足",MessageBoxButtons.OK,MessageBoxIcon.Information);
         }
         catch(OperationCanceledException){_status.Text="已停止分析。";}

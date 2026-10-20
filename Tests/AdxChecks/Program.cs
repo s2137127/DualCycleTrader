@@ -120,6 +120,11 @@ holidayWindow.Insert(3, holidayWindow[2] with { Time = tradingDates[2].AddHours(
 var asOfSeptember30 = HistoricalCandles.DailyAtClose(holidayWindow, tradingDates[3]);
 Check(asOfSeptember30.Select(bar => bar.Time.Date).SequenceEqual(tradingDates),
     "historical scan takes four trading dates across the September holiday");
+var previousTradingDay = HistoricalCandles.DailyAtClose(
+    holidayWindow.Take(holidayWindow.Count - 1).ToList(), tradingDates[3]);
+Check(previousTradingDay[^1].Time.Date == tradingDates[2] &&
+    previousTradingDay.Count == 3,
+    "historical scan uses the latest earlier trading date when the selected day is absent");
 Check(HistoricalCandles.HasCandleOn(holidayWindow, tradingDates[2]) &&
     !HistoricalCandles.HasCandleOn(holidayWindow, new DateTime(2026, 9, 28)),
     "historical date check finds the selected date even when later bars exist");
