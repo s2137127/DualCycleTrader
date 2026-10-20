@@ -54,7 +54,7 @@ public class HomeBase : ComponentBase
             var config = await Http.GetFromJsonAsync<Config>("firebase-config.json", jsonOptions);
             if (config is null || string.IsNullOrWhiteSpace(config.ProjectId) ||
                 string.IsNullOrWhiteSpace(config.MarketApiBaseUrl)) return;
-            await JS.InvokeVoidAsync("import", "./js/stock-app.js?v=20261020-b");
+            await JS.InvokeVoidAsync("import", "./js/stock-app.js?v=20261020-c");
             await JS.InvokeVoidAsync("stockApp.initialize", new
             {
                 apiKey = config.ApiKey, authDomain = config.AuthDomain,
@@ -189,8 +189,19 @@ public class HomeBase : ComponentBase
         DateTime from, DateTime to, int fetchDays, int requiredBars,
         List<Candle> cached, CancellationToken token)
     {
-        if (cached.Count >= requiredBars && HistoricalCandles.HasCandleOn(cached, date))
+        if (HistoricalCandles.DailyAtClose(cached, date).Count >= requiredBars &&
+            HistoricalCandles.HasCandleOn(cached, date))
             return cached;
+        try
+        {
+            cached = await Store.RefreshAsync(symbol, "D", from, to);
+            token.ThrowIfCancellationRequested();
+            if (HistoricalCandles.DailyAtClose(cached, date).Count >= requiredBars &&
+                HistoricalCandles.HasCandleOn(cached, date))
+                return cached;
+        }
+        catch (OperationCanceledException) { throw; }
+        catch { /* The quote API remains the fallback when Firestore is unavailable. */ }
         var fresh = await marketApi!.GetAsync(symbol, "D", fetchDays);
         token.ThrowIfCancellationRequested();
         if (fresh.Count > 0) await Store.UpsertRangeAsync(symbol, "D", fresh);
@@ -297,7 +308,7 @@ public class HomeBase : ComponentBase
             int fetchDays = Math.Min(730, Math.Max(365, (today - analysisEnd).Days + 365));
             var readStarted = timer.Elapsed;
             var allMarket = await Store.GetAsync("^TWII", "D", from, to);
-            if (date is not null && (allMarket.Count < 130 ||
+            if (date is not null && (HistoricalCandles.DailyAtClose(allMarket, analysisEnd).Count < 130 ||
                 !HistoricalCandles.HasCandleOn(allMarket, analysisEnd)))
             {
                 if (analysisEnd < today.AddDays(-730))
@@ -350,7 +361,7 @@ public class HomeBase : ComponentBase
                 if (date is not null)
                 {
                     var missing = batch.Select((stock, index) => (Stock: stock, Index: index))
-                        .Where(item => dailyBars[item.Index].Count < requiredStockBars ||
+                        .Where(item => HistoricalCandles.DailyAtClose(dailyBars[item.Index], analysisEnd).Count < requiredStockBars ||
                             !HistoricalCandles.HasCandleOn(dailyBars[item.Index], analysisEnd)).ToArray();
                     if (analysisEnd < today.AddDays(-730)) unavailableStocks += missing.Length;
                     else

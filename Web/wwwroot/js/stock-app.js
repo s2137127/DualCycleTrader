@@ -221,6 +221,19 @@ window.stockApp = {
             bar.Time.slice(0, 10) <= toDate);
         return JSON.stringify(all.sort((a, b) => a.Time.localeCompare(b.Time)));
     },
+    async refreshCandles(symbol, timeframe, fromMonth, toMonth, fromDate, toDate) {
+        if (timeframe !== 'D') throw new Error('Only daily candles are supported');
+        const periods = monthsBetween(fromMonth, toMonth);
+        const groups = await Promise.all(periods.map(async month => {
+            const snapshot = await getDocFromServer(candleRef(symbol, timeframe, month));
+            return snapshot.exists() ? Object.values(snapshot.data().bars ?? {}) : [];
+        }));
+        await storeMany(periods.map((month, index) =>
+            [cacheKey(symbol, timeframe, month), groups[index]]));
+        const all = groups.flat().filter(bar => bar.Time.slice(0, 10) >= fromDate &&
+            bar.Time.slice(0, 10) <= toDate);
+        return JSON.stringify(all.sort((a, b) => a.Time.localeCompare(b.Time)));
+    },
     async getCandlesBatch(symbols, timeframe, fromMonth, toMonth, fromDate, toDate) {
         if (timeframe !== 'D') throw new Error('Only daily candles are supported');
         const periods = monthsBetween(fromMonth, toMonth);

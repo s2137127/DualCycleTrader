@@ -14,5 +14,5 @@ public static class HistoricalCandles
         => NormalizeDaily(candles.Where(c => c.Time.Date <= date.Date));
 
     public static bool HasCandleOn(IReadOnlyList<Candle> candles, DateTime date)
-        => candles.Count > 0 && candles[^1].Time.Date == date.Date;
+        => candles.Any(c => c.Time.Date == date.Date);
 }

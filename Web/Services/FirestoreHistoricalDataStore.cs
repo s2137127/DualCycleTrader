@@ -69,6 +69,20 @@ public sealed class FirestoreHistoricalDataStore(IJSRuntime js) : IHistoricalDat
         return bars;
     }
 
+    public async Task<List<Candle>> RefreshAsync(string symbol,string timeframe,DateTime from,DateTime to)
+    {
+        if(timeframe!="D") throw new ArgumentOutOfRangeException(nameof(timeframe));
+        string json=await js.InvokeAsync<string>("stockApp.refreshCandles",symbol,timeframe,
+            from.ToString("yyyy"),to.ToString("yyyy"),
+            from.ToString("yyyy-MM-dd"),to.ToString("yyyy-MM-dd"));
+        var bars=HistoricalCandles.NormalizeDaily(
+            (JsonSerializer.Deserialize<List<Candle>>(json,JsonOptions) ?? new())
+            .Where(c=>c.Time>=from && c.Time<=to));
+        Invalidate(symbol,timeframe);
+        Remember(new CacheKey(symbol,timeframe,from,to),bars);
+        return bars;
+    }
+
     public async Task<List<List<Candle>>> GetManyAsync(IReadOnlyList<string> symbols,string timeframe,
         DateTime from,DateTime to)
     {

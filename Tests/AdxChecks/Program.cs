@@ -110,6 +110,17 @@ var duplicateDayBars = holidayBars.Take(holidayBars.Count - 1)
 var normalized = HistoricalCandles.NormalizeDaily(duplicateDayBars);
 Check(normalized.Count == holidayBars.Count && normalized[^2].Time == laterRevision.Time,
     "latest revision is retained once per trading date");
+var tradingDates = new[] { new DateTime(2026, 9, 23), new DateTime(2026, 9, 24),
+    new DateTime(2026, 9, 29), new DateTime(2026, 9, 30) };
+var holidayWindow = tradingDates.Select((day, index) =>
+    holidayBars[holidayBars.Count - 4 + index] with { Time = day.AddHours(9) }).ToList();
+holidayWindow.Insert(3, holidayWindow[2] with { Time = tradingDates[2].AddHours(13) });
+var asOfSeptember30 = HistoricalCandles.DailyAtClose(holidayWindow, tradingDates[3]);
+Check(asOfSeptember30.Select(bar => bar.Time.Date).SequenceEqual(tradingDates),
+    "historical scan takes four trading dates across the September holiday");
+Check(HistoricalCandles.HasCandleOn(holidayWindow, tradingDates[2]) &&
+    !HistoricalCandles.HasCandleOn(holidayWindow, new DateTime(2026, 9, 28)),
+    "historical date check finds the selected date even when later bars exist");
 var shortMacdSettings = new StrategySettings
     { DailyMacdFast = 5, DailyMacdSlow = 13, DailyMacdSignal = 5 };
 var rawHist = Enumerable.Range(0, 4).Select(offset => Ta.Macd(
