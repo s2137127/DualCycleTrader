@@ -64,6 +64,26 @@ public sealed class CachedMarketDataProvider : IMarketDataProvider
         return merged;
     }
 
+    public async Task<List<Candle>> GetDailyAtAsync(string symbol, DateTime date, int requiredBars)
+    {
+        var cached = Load(symbol, "D");
+        var atDate = HistoricalCandles.DailyAtClose(cached, date);
+        if (atDate.Count >= requiredBars && HistoricalCandles.HasCandleOn(atDate, date))
+            return atDate;
+
+        int days = Math.Clamp((DateTime.Today - date.Date).Days + 220, 220, 730);
+        var fresh = await _remote.GetDailyAsync(symbol, days);
+        var merged = Merge(cached, fresh);
+        if (_settings.AutoCleanupCache)
+        {
+            int requiredRetention = merged.Count(c => c.Time.Date >= date.Date) + requiredBars;
+            int retention = Math.Max(_settings.DailyRetentionBars, requiredRetention);
+            if (merged.Count > retention) merged = merged.TakeLast(retention).ToList();
+        }
+        Save(symbol, "D", merged);
+        return HistoricalCandles.DailyAtClose(merged, date);
+    }
+
     public List<Candle> GetCachedDaily(string symbol) => Load(symbol, "D");
 
     public void MarkDataUpdated()

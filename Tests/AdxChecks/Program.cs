@@ -1,6 +1,8 @@
 using DualCycleTrader.Indicators;
+using DualCycleTrader.Data;
 using DualCycleTrader.Models;
 using DualCycleTrader.Strategy;
+using System.Text.Json;
 
 static void Check(bool condition, string message)
 {
@@ -141,3 +143,43 @@ Check(!StockScanner.DebugScan("X.TW", "X", doji, candles,
     MarketMode.B_BullRange, settings).HardConditions["當日收紅 K（收盤 > 開盤）"],
     "doji fails red-candle condition");
 Console.WriteLine("B scanner checks passed");
+
+var september30 = new DateTime(2026, 9, 30);
+var remoteBars = Candles(140).Select((bar, index) =>
+    bar with { Time = new DateTime(2026, 4, 1).AddDays(index) }).ToList();
+remoteBars[^4] = remoteBars[^4] with { Time = new DateTime(2026, 9, 23) };
+remoteBars[^3] = remoteBars[^3] with { Time = new DateTime(2026, 9, 24) };
+remoteBars[^2] = remoteBars[^2] with { Time = new DateTime(2026, 9, 29) };
+remoteBars[^1] = remoteBars[^1] with { Time = september30 };
+var cacheDirectory = Path.Combine(Path.GetTempPath(), "DualCycleTraderHistoryTest-" + Guid.NewGuid());
+Directory.CreateDirectory(cacheDirectory);
+try
+{
+    File.WriteAllText(Path.Combine(cacheDirectory, "2064_TWO_D.json"),
+        JsonSerializer.Serialize(remoteBars.Take(remoteBars.Count - 1)));
+    var remote = new HistoricalTestProvider(remoteBars);
+    var provider = new CachedMarketDataProvider(remote, settings, cacheDirectory);
+    var repaired = await provider.GetDailyAtAsync("2064.TWO", september30, 25);
+    Check(HistoricalCandles.HasCandleOn(repaired, september30) &&
+        remote.Calls == 1 && provider.GetCachedDaily("2064.TWO").Count == remoteBars.Count,
+        "desktop history analysis backfills a missing selected trading date");
+    await provider.GetDailyAtAsync("2064.TWO", september30, 25);
+    Check(remote.Calls == 1, "desktop history analysis reuses the repaired cache");
+}
+finally
+{
+    var fullCachePath = Path.GetFullPath(cacheDirectory);
+    if (fullCachePath.StartsWith(Path.GetFullPath(Path.GetTempPath()),
+        StringComparison.OrdinalIgnoreCase))
+        Directory.Delete(fullCachePath, recursive: true);
+}
+
+sealed class HistoricalTestProvider(List<Candle> bars) : IMarketDataProvider
+{
+    public int Calls { get; private set; }
+    public Task<List<Candle>> GetDailyAsync(string symbol, int days = 260)
+    {
+        Calls++;
+        return Task.FromResult(bars);
+    }
+}

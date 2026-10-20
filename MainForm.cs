@@ -272,6 +272,10 @@ public sealed class MainForm : Form
             }
 
             var allMarket=_data.GetCachedDaily("^TWII");
+            if(historicalDate is not null &&
+                (HistoricalCandles.DailyAtClose(allMarket,historicalDate.Value).Count<130 ||
+                 !HistoricalCandles.HasCandleOn(allMarket,historicalDate.Value)))
+                allMarket=await _data.GetDailyAtAsync("^TWII",historicalDate.Value,130);
             var market=historicalDate is null ? allMarket
                 : HistoricalCandles.DailyAtClose(allMarket,historicalDate.Value);
             if(market.Count==0)
@@ -320,6 +324,38 @@ public sealed class MainForm : Form
                 return;
             }
 
+            int requiredStockBars=Math.Max(25,Math.Max(
+                _settings.DailyMacdSlow+_settings.DailyMacdSignal+1,
+                _settings.DailyRsiPeriod+4));
+            int failedBackfills=0;
+            if(historicalDate is not null)
+            {
+                var missing=_latestUniverse.Where(stock=>
+                {
+                    var daily=HistoricalCandles.DailyAtClose(
+                        _data.GetCachedDaily(stock.Symbol),historicalDate.Value);
+                    return daily.Count<requiredStockBars ||
+                        !HistoricalCandles.HasCandleOn(daily,historicalDate.Value);
+                }).ToArray();
+                foreach(var batch in missing.Chunk(6))
+                {
+                    _cts!.Token.ThrowIfCancellationRequested();
+                    _status.Text=$"回補 {historicalDate.Value:yyyy/MM/dd} 個股日 K：{missing.Length} 檔待查";
+                    var repaired=await Task.WhenAll(batch.Select(async stock=>
+                    {
+                        try
+                        {
+                            await _data.GetDailyAtAsync(stock.Symbol,historicalDate.Value,
+                                requiredStockBars);
+                            return false;
+                        }
+                        catch(OperationCanceledException){throw;}
+                        catch{return true;}
+                    }));
+                    failedBackfills+=repaired.Count(failed=>failed);
+                }
+            }
+
             _progress.Minimum=0; _progress.Maximum=_latestUniverse.Count; _progress.Value=0;
             _status.Text=$"使用快取執行 {string.Join("+",scannerModes.Select(ScannerModeText))} 分析...";
             var token=_cts!.Token;
@@ -334,7 +370,8 @@ public sealed class MainForm : Form
                     var daily=historicalDate is null ? cachedDaily
                         : HistoricalCandles.DailyAtClose(cachedDaily,historicalDate.Value);
                     if(historicalDate is not null &&
-                        !HistoricalCandles.HasCandleOn(daily,historicalDate.Value))
+                        (daily.Count<requiredStockBars ||
+                         !HistoricalCandles.HasCandleOn(daily,historicalDate.Value)))
                     {
                         missingDaily++;
                         continue;
@@ -379,9 +416,9 @@ public sealed class MainForm : Form
             BindGridRows();
             _status.Text=$"{(historicalDate is null ? "今日" : historicalDate.Value.ToString("yyyy/MM/dd")+" 收 K 回測")}：{string.Join("+",scannerModes.Select(ScannerModeText))}，日K符合 {found.Count} 檔。"+
                 (historicalDate is null ? "" : $" 日K資料不足／非當日交易 {scan.missingDaily} 檔。");
-            if(historicalDate is not null && (scan.missingDaily>0))
-                MessageBox.Show($"所選日期 {historicalDate.Value:yyyy/MM/dd} 的快取資料不完整：\r\n"+
-                    $"日 K 不足或當日未交易：{scan.missingDaily} 檔",
+            if(historicalDate is not null && failedBackfills>0)
+                MessageBox.Show($"所選日期 {historicalDate.Value:yyyy/MM/dd} 的日 K 回補失敗："+
+                    $"{failedBackfills} 檔；回補後仍無當日日 K：{scan.missingDaily} 檔",
                     "歷史資料不足",MessageBoxButtons.OK,MessageBoxIcon.Information);
         }
         catch(OperationCanceledException){_status.Text="已停止分析。";}
