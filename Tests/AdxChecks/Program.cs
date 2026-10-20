@@ -52,6 +52,18 @@ var debug = StockScanner.DebugScan("X.TW", "X", candles, Candles(500, true),
 Check(debug.HardConditions.Count == 6, "exactly six B conditions");
 Check(debug.HardConditions.ContainsKey("+DI > -DI"), "stock DI condition");
 Check(debug.HardConditions.Keys.Any(key => key.Contains("MA5 > MA20")), "MA5 and MA20 condition");
+var customMaSettings = new StrategySettings
+    { ScannerMaShortPeriod = 3, ScannerMaLongPeriod = 8 };
+var customMaDebug = StockScanner.DebugScan("X.TW", "X", candles,
+    Candles(500, true), MarketMode.B_BullRange, customMaSettings);
+Check(customMaDebug.HardConditions.ContainsKey("股價 > MA3 > MA8") &&
+    customMaDebug.HardConditions.ContainsKey("MA3、MA8 向上（高於前一日）") &&
+    Math.Abs(customMaDebug.Ma20 - Ta.Sma(candles, 3)!.Value) < 1e-9 &&
+    Math.Abs(customMaDebug.Ma50 - Ta.Sma(candles, 8)!.Value) < 1e-9,
+    "both scanner MA conditions use the configured periods");
+customMaSettings.ScannerMaLongPeriod = 60;
+Check(StockScanner.MinimumBars(customMaSettings) == 61,
+    "historical scanner requests enough bars for the configured long MA slope");
 Check(debug.HardConditions.Keys.Any(key => key.Contains("今天 > 昨天，昨天 ≤ 前天 ≤ 大前天")),
     "RSI turn-up pattern");
 static List<Candle> Prices(IEnumerable<decimal> prices) => prices.Select((close, index) =>

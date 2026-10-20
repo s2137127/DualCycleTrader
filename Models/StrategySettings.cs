@@ -6,6 +6,8 @@ public sealed class StrategySettings
     public int DailyMacdFast { get; set; } = 12;
     public int DailyMacdSlow { get; set; } = 26;
     public int DailyMacdSignal { get; set; } = 9;
+    public int ScannerMaShortPeriod { get; set; } = 5;
+    public int ScannerMaLongPeriod { get; set; } = 20;
     public double Rsi5UpperLimit { get; set; } = 60.0;
     public int BullishMaShortPeriod { get; set; } = 20;
     public int BullishMaMediumPeriod { get; set; } = 50;
@@ -44,6 +46,8 @@ public sealed class StrategySettings
 
     public void MigrateLegacyScannerDefaults()
     {
+        ScannerMaShortPeriod = Math.Clamp(ScannerMaShortPeriod, 2, 100);
+        ScannerMaLongPeriod = Math.Clamp(ScannerMaLongPeriod, ScannerMaShortPeriod + 1, 200);
         if (ABScannerVersion >= 3) return;
         if (ABScannerVersion > 0 && PullbackMinPercent == 3.0 && PullbackMaxPercent == 10.0)
         { PullbackMinPercent = 5.0; PullbackMaxPercent = 12.0; }

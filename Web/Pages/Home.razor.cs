@@ -99,6 +99,9 @@ public class HomeBase : ComponentBase
             Settings.DailyMacdSignal = macdSignal;
             MacdPeriodsText = $"{macdFast},{macdSlow},{macdSignal}";
             Settings.DailyRsiPeriod = Math.Clamp(Settings.DailyRsiPeriod, 2, 100);
+            Settings.ScannerMaShortPeriod = Math.Clamp(Settings.ScannerMaShortPeriod, 2, 100);
+            Settings.ScannerMaLongPeriod = Math.Clamp(Settings.ScannerMaLongPeriod,
+                Settings.ScannerMaShortPeriod + 1, 200);
             Settings.Rsi5UpperLimit = Math.Clamp(Settings.Rsi5UpperLimit, 1, 101);
             Settings.BreakoutLookbackMin = Math.Clamp(Settings.BreakoutLookbackMin, 10, 60);
             Settings.BreakoutLookbackMax = Math.Clamp(Settings.BreakoutLookbackMax,
@@ -155,7 +158,7 @@ public class HomeBase : ComponentBase
             var mode = MarketMode.B_BullRange;
             var result = StockScanner.DebugScan(stock.Symbol, stock.Name, daily, market, mode, Settings);
             DebugText = $"{stock.Symbol} {stock.Name}　{result.Date:yyyy/MM/dd}　{(result.Passed ? "入選" : "淘汰")}\n" +
-                $"Close {result.Close:F2}｜MA5 {result.Ma20:F2}｜MA20 {result.Ma50:F2}\n" +
+                $"Close {result.Close:F2}｜MA{Settings.ScannerMaShortPeriod} {result.Ma20:F2}｜MA{Settings.ScannerMaLongPeriod} {result.Ma50:F2}\n" +
                 $"RSI({Settings.DailyRsiPeriod}) {result.Rsi14:F1}｜MACD DIF {result.MacdDif:F3} / DEA {result.MacdDea:F3}\n" +
                 string.Join("\n", result.HardConditions.Select(item => $"{(item.Value ? "✓" : "✗")} {item.Key}")) +
                 $"\n{result.Details}";
@@ -347,8 +350,7 @@ public class HomeBase : ComponentBase
             var found = new List<(StockInfo Stock, StockCandidate Candidate, decimal Volume)>();
             int backfilledStocks = 0, failedBackfills = 0, unavailableStocks = 0,
                 insufficientStocks = 0, earlierTradingDayStocks = 0;
-            int requiredStockBars = Math.Max(25, Math.Max(Settings.DailyMacdSlow + Settings.DailyMacdSignal + 1,
-                Settings.DailyRsiPeriod + 4));
+            int requiredStockBars = StockScanner.MinimumBars(Settings);
             ProgressMax = Universe.Count; Progress = 0;
             const int readBatchSize = 64;
             for (int start = 0; start < Universe.Count; start += readBatchSize)

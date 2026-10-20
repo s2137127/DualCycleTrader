@@ -24,6 +24,8 @@
             <details><summary>策略設定</summary>
                 <div class="settings-grid">
                     <label>日 K RSI<input type="number" @bind="Settings.DailyRsiPeriod" /></label>
+                    <label>個股短均線 MA<input type="number" min="2" max="100" @bind="Settings.ScannerMaShortPeriod" /></label>
+                    <label>個股長均線 MA<input type="number" min="3" max="200" @bind="Settings.ScannerMaLongPeriod" /></label>
                     <label>日 K MACD（快,慢,訊號）<input type="text" placeholder="12,26,9" @bind="MacdPeriodsText" /></label>
                 </div><button @onclick="SaveSettings">儲存設定</button>
             </details>

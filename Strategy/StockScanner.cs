@@ -5,6 +5,10 @@ namespace DualCycleTrader.Strategy;
 
 public static class StockScanner
 {
+    public static int MinimumBars(StrategySettings s) => Math.Max(25,
+        Math.Max(s.DailyMacdSlow + s.DailyMacdSignal + 1,
+            Math.Max(s.DailyRsiPeriod + 4, s.ScannerMaLongPeriod + 1)));
+
     // B remains the candidate's legacy mode code. Market classification never gates selection.
     public static StockCandidate? Scan(string symbol, string name, IReadOnlyList<Candle> x,
         IReadOnlyList<Candle> market, MarketMode mode, StrategySettings s)
@@ -25,7 +29,7 @@ public static class StockScanner
             RelativeStrength20 = RelativeStrength20(x, market),
             DailyMacdDif = macd.dif, DailyMacdDea = macd.dea,
             DailyK = kdj.Item1, DailyD = kdj.Item2, DailyJ = kdj.Item3,
-            Reason = "收紅 K＋MACD 負柱縮短＋股價 > MA5 > MA20＋MA5/MA20 向上＋RSI 剛上翹＋+DI > -DI"
+            Reason = $"收紅 K＋MACD 負柱縮短＋股價 > MA{s.ScannerMaShortPeriod} > MA{s.ScannerMaLongPeriod}＋MA{s.ScannerMaShortPeriod}/MA{s.ScannerMaLongPeriod} 向上＋RSI 剛上翹＋+DI > -DI"
         };
     }
 
@@ -46,7 +50,8 @@ public static class StockScanner
         {
             Symbol = symbol, Mode = MarketMode.B_BullRange, Date = x.Count > 0 ? x[^1].Time : default,
             Close = x.Count > 0 ? (double)x[^1].Close : 0,
-            Ma20 = Ta.Sma(x, 5) ?? 0, Ma50 = Ta.Sma(x, 20) ?? 0,
+            Ma20 = Ta.Sma(x, s.ScannerMaShortPeriod) ?? 0,
+            Ma50 = Ta.Sma(x, s.ScannerMaLongPeriod) ?? 0,
             Rsi14 = Ta.Rsi(x, s.DailyRsiPeriod) ?? 0,
             MacdDif = macd?.dif ?? 0, MacdDea = macd?.dea ?? 0,
             HardConditions = checks,
@@ -58,12 +63,13 @@ public static class StockScanner
 
     private static Dictionary<string, bool> Conditions(IReadOnlyList<Candle> x, StrategySettings s)
     {
-        int minimum = Math.Max(25, Math.Max(s.DailyMacdSlow + s.DailyMacdSignal + 1,
-            s.DailyRsiPeriod + 4));
+        int minimum = MinimumBars(s);
         if (x.Count < minimum)
             return new() { [$"個股日 K 至少 {minimum} 根（目前 {x.Count} 根）"] = false };
         double close = (double)x[^1].Close;
-        double ma5 = Ta.Sma(x, 5)!.Value, ma20 = Ta.Sma(x, 20)!.Value;
+        int shortPeriod = s.ScannerMaShortPeriod, longPeriod = s.ScannerMaLongPeriod;
+        double shortMa = Ta.Sma(x, shortPeriod)!.Value;
+        double longMa = Ta.Sma(x, longPeriod)!.Value;
         var macdHist = Enumerable.Range(0, 4)
             .Select(offset => Ta.Macd(x.Take(x.Count - offset).ToArray(),
                 s.DailyMacdFast, s.DailyMacdSlow, s.DailyMacdSignal)?.hist)
@@ -79,9 +85,11 @@ public static class StockScanner
                 macdHist.All(value => value is < 0) &&
                 macdHist[0] > macdHist[1] && macdHist[1] <= macdHist[2] &&
                 macdHist[2] <= macdHist[3],
-            ["股價 > MA5 > MA20"] = close > ma5 && ma5 > ma20,
-            ["MA5、MA20 向上（高於前一日）"] = ma5 > Ta.Sma(x, 5, 1) &&
-                ma20 > Ta.Sma(x, 20, 1),
+            [$"股價 > MA{shortPeriod} > MA{longPeriod}"] =
+                close > shortMa && shortMa > longMa,
+            [$"MA{shortPeriod}、MA{longPeriod} 向上（高於前一日）"] =
+                shortMa > Ta.Sma(x, shortPeriod, 1) &&
+                longMa > Ta.Sma(x, longPeriod, 1),
             [$"RSI({s.DailyRsiPeriod}) 今天 > 昨天，昨天 ≤ 前天 ≤ 大前天"] =
                 rsi.All(value => value is not null) && rsi[0] > rsi[1] &&
                 rsi[1] <= rsi[2] && rsi[2] <= rsi[3],

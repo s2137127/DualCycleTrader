@@ -33,6 +33,8 @@ public sealed class MainForm : Form
     private readonly NumericUpDown _dailyMacdFast=new(){Minimum=2,Maximum=100,Width=48};
     private readonly NumericUpDown _dailyMacdSlow=new(){Minimum=3,Maximum=150,Width=48};
     private readonly NumericUpDown _dailyMacdSignal=new(){Minimum=2,Maximum=100,Width=48};
+    private readonly NumericUpDown _scannerMaShort=new(){Minimum=2,Maximum=100,Width=55};
+    private readonly NumericUpDown _scannerMaLong=new(){Minimum=3,Maximum=200,Width=55};
     private readonly CheckBox _autoCleanup=new(){Text="自動清理舊行情",AutoSize=true};
     private readonly Label _cacheInfo=new(){AutoSize=true};
     private readonly ProgressBar _progress=new(){Width=360,Height=24};
@@ -70,6 +72,8 @@ public sealed class MainForm : Form
         _dailyMacdFast.Value=_settings.DailyMacdFast;
         _dailyMacdSlow.Value=_settings.DailyMacdSlow;
         _dailyMacdSignal.Value=_settings.DailyMacdSignal;
+        _scannerMaShort.Value=_settings.ScannerMaShortPeriod;
+        _scannerMaLong.Value=_settings.ScannerMaLongPeriod;
         _autoCleanup.Checked=_settings.AutoCleanupCache;
         _simulationMode.Items.AddRange(new object[]{
             new ModeOption("自動（使用確認交易模式）",null),
@@ -100,6 +104,9 @@ public sealed class MainForm : Form
         settingsRow.Controls.Add(_dailyMacdFast);
         settingsRow.Controls.Add(_dailyMacdSlow);
         settingsRow.Controls.Add(_dailyMacdSignal);
+        settingsRow.Controls.Add(new Label{Text="個股 MA 短／長:",AutoSize=true,Padding=new Padding(10,7,0,0)});
+        settingsRow.Controls.Add(_scannerMaShort);
+        settingsRow.Controls.Add(_scannerMaLong);
         settingsRow.Controls.Add(_autoCleanup);
         settingsRow.Controls.Add(_saveSettings);
         settingsRow.Controls.Add(_clearCache);
@@ -197,6 +204,7 @@ public sealed class MainForm : Form
     {
         _settings.DailyRsiPeriod=(int)_dailyRsi.Value;
         SaveMacdSettings();
+        SaveScannerMaSettings();
         _settings.AutoCleanupCache=_autoCleanup.Checked;
         _settingsStore.Save(_settings);
         _flowGuide.RefreshContent();
@@ -324,9 +332,7 @@ public sealed class MainForm : Form
                 return;
             }
 
-            int requiredStockBars=Math.Max(25,Math.Max(
-                _settings.DailyMacdSlow+_settings.DailyMacdSignal+1,
-                _settings.DailyRsiPeriod+4));
+            int requiredStockBars=StockScanner.MinimumBars(_settings);
             int failedBackfills=0;
             if(historicalDate is not null)
             {
@@ -589,6 +595,7 @@ public sealed class MainForm : Form
     {
         _settings.DailyRsiPeriod=(int)_dailyRsi.Value;
         SaveMacdSettings();
+        SaveScannerMaSettings();
         _settings.AutoCleanupCache=_autoCleanup.Checked;
         _settingsStore.Save(_settings);
     }
@@ -607,6 +614,14 @@ public sealed class MainForm : Form
         _settings.DailyMacdFast=(int)_dailyMacdFast.Value;
         _settings.DailyMacdSlow=(int)_dailyMacdSlow.Value;
         _settings.DailyMacdSignal=(int)_dailyMacdSignal.Value;
+    }
+
+    private void SaveScannerMaSettings()
+    {
+        if(_scannerMaShort.Value>=_scannerMaLong.Value)
+            _scannerMaLong.Value=_scannerMaShort.Value+1;
+        _settings.ScannerMaShortPeriod=(int)_scannerMaShort.Value;
+        _settings.ScannerMaLongPeriod=(int)_scannerMaLong.Value;
     }
 
     private static double Rank(StockCandidate c,MarketMode m)=>m switch{

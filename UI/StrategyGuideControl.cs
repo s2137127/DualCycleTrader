@@ -57,7 +57,7 @@ public sealed class StrategyGuideControl : UserControl
 
     public void RefreshContent()
     {
-        _parameterSummary.Text=$"個股 B 條件｜RSI({_settings.DailyRsiPeriod})、MACD({_settings.DailyMacdFast},{_settings.DailyMacdSlow},{_settings.DailyMacdSignal})｜股價 > MA5 > MA20｜+DI > -DI";
+        _parameterSummary.Text=$"個股 B 條件｜RSI({_settings.DailyRsiPeriod})、MACD({_settings.DailyMacdFast},{_settings.DailyMacdSlow},{_settings.DailyMacdSignal})｜股價 > MA{_settings.ScannerMaShortPeriod} > MA{_settings.ScannerMaLongPeriod}｜+DI > -DI";
         if(_view==StrategyGuideView.Conditions && _description is not null)
         {
             var mode=(MarketMode)(_description.Tag ?? MarketMode.B_BullRange);
